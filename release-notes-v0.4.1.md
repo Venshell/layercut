@@ -5,7 +5,6 @@
 | 文件 | 说明 |
 | --- | --- |
 | `LayerCut_0.4.1_x64-setup.exe` | Windows 安装包 |
-| `LayerCut_0.4.1_x64_portable.exe` | 免安装版 |
 
 系统要求：Windows 10/11，需有 WebView2。
 

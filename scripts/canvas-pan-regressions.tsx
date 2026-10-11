@@ -13,7 +13,14 @@ createRoot(document.getElementById("root")!).render(
   </I18nProvider>
 );
 
-const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+const frame = () => new Promise<void>((resolve) => {
+  // rAF is throttled in hidden/occluded tabs; a timeout keeps the harness
+  // runnable there while real frames still take precedence.
+  let done = false;
+  const finish = () => { if (!done) { done = true; resolve(); } };
+  requestAnimationFrame(finish);
+  setTimeout(finish, 120);
+});
 const assert = (condition: unknown, message: string) => { if (!condition) throw new Error(message); };
 const results: { name: string; pass: boolean; detail?: string }[] = [];
 const test = async (name: string, run: () => Promise<void>) => {

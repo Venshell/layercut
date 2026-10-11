@@ -19,5 +19,5 @@ Thumbs.db
 .zcode/
 .workbuddy/
 
-# session scratch / debug artifacts
-/_*
+# session scratch / debug artifacts (any depth)
+_*

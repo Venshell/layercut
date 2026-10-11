@@ -126,10 +126,9 @@ export interface SnapResult {
 
 export function collectSnapTargets(
   canvas: { width: number; height: number },
-  layerAABBs: AABB[],
-  excludeIds: Set<string>
+  layerAABBs: AABB[]
 ): SnapTargets {
-  void excludeIds; // exclusion is resolved by the caller when building AABBs
+  // exclusion is resolved by the caller when building the AABB list
   const v = [0, canvas.width / 2, canvas.width];
   const h = [0, canvas.height / 2, canvas.height];
   for (const b of layerAABBs) {

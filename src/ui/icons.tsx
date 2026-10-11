@@ -135,26 +135,6 @@ export const FolderIcon = ({ size }: IconProps) =>
     size
   );
 
-export const HistoryIcon = ({ size }: IconProps) =>
-  svg(
-    <>
-      <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v3h3" />
-      <path d="M8 5.5V8l2 1.5" />
-    </>,
-    size
-  );
-
-export const GridIcon = ({ size }: IconProps) =>
-  svg(
-    <>
-      <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" />
-      <rect x="9" y="2.5" width="4.5" height="4.5" rx="1" />
-      <rect x="2.5" y="9" width="4.5" height="4.5" rx="1" />
-      <rect x="9" y="9" width="4.5" height="4.5" rx="1" />
-    </>,
-    size
-  );
-
 /* ---------- Drawing tools ---------- */
 
 export const SelectIcon = ({ size }: IconProps) =>

@@ -16,7 +16,6 @@ interface ViewportState {
   /** zoom keeping the given stage-space point fixed */
   zoomAt: (factor: number, stageX: number, stageY: number) => void;
   zoomBy: (factor: number) => void;
-  reset: () => void;
   /** fit canvas into stage with padding, centered */
   fit: (canvasW: number, canvasH: number) => void;
 }
@@ -47,7 +46,6 @@ export const useViewportStore = create<ViewportState>((set, get) => ({
     get().zoomAt(factor, stageWidth / 2, stageHeight / 2);
   },
 
-  reset: () => set({ scale: 1, x: 0, y: 0 }),
 
   fit: (canvasW, canvasH) => {
     const { stageWidth, stageHeight } = get();

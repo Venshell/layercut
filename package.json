@@ -10,7 +10,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "app:dev": "tauri dev",
-    "app:build": "tauri build"
+    "app:build": "tauri build",
+    "test": "node scripts/export-regressions.cjs && node scripts/project-regressions.cjs && node scripts/project-blob-regressions.cjs && node scripts/history-regressions.cjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",

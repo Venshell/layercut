@@ -2,7 +2,7 @@ import { newAssetId, useAssetStore } from "../assets/assetStore";
 import { canvasToBlob } from "../export/exportPNG";
 import { computeOcclusion } from "../occlusion/OcclusionEngine";
 import { create2DCanvas } from "../utils/canvas";
-import { uid } from "../utils/id";
+import { makeLayer } from "./layerUtils";
 import { hasPendingTransaction, useEditorStore } from "./layerStore";
 import type { CanvasSettings, DocumentSnapshot, Layer } from "./layerTypes";
 import { paintedAssetsForLayers } from "../vector/svgPaint";
@@ -37,11 +37,20 @@ export async function mergeCurrentLayers(name: string): Promise<boolean> {
   const bitmap = await createImageBitmap(sourceBlob);
   const assetId = newAssetId();
   const previewUrl = URL.createObjectURL(sourceBlob);
-  const layer: Layer = {
-    id: uid("layer"), name, type: "png", assetId,
-    transform: { x: state.canvas.width / 2, y: state.canvas.height / 2, scaleX: 1, scaleY: 1, rotation: 0 },
-    opacity: 1, visible: true, locked: false, aspectLocked: false, occludesWhenHidden: false,
-  };
+  const layer = makeLayer({
+    name,
+    type: "png",
+    assetId,
+    canvas: state.canvas,
+    natural: { width: output.width, height: output.height },
+    transform: {
+      x: state.canvas.width / 2,
+      y: state.canvas.height / 2,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+    },
+  });
   const assetStore = useAssetStore.getState();
   assetStore.put({
     id: assetId, kind: "png", fileName: `${name}.png`, mimeType: "image/png",

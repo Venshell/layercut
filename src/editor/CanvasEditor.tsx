@@ -19,6 +19,7 @@ import { SHAPE_NAME_KEY } from "../shapes/shapeLabels";
 import { useShapeGesture } from "./useShapeGesture";
 import { ShapePreview } from "./ShapePreview";
 import { useI18n } from "../i18n";
+import { useUIStore } from "../ui/uiStore";
 
 interface Guide {
   v: number | null;
@@ -36,6 +37,11 @@ function emitGuide(g: Guide | null) {
 // set while a viewport pan gesture is active, so node mousedown ignores it
 let isPanning = false;
 
+// Middle-button panning is a viewport gesture; without this Konva would start
+// dragging the layer under the cursor on button 1 (its default dragButtons are
+// [0, 1]). Transformer anchors call startDrag() directly and are unaffected.
+Konva.dragButtons = [0];
+
 // ---------------------------------------------------------------------------
 // Single interactive layer node (Normal preview mode)
 // ---------------------------------------------------------------------------
@@ -44,11 +50,14 @@ function LayerNode({
   asset,
   nodeRefs,
   onNodeChange,
+  panning,
 }: {
   layer: Layer;
   asset: LayerAsset | null;
   nodeRefs: React.MutableRefObject<Record<string, Konva.Image | null>>;
   onNodeChange: () => void;
+  /** space-pan or mouse-pan in progress — layers must not be draggable */
+  panning: boolean;
 }) {
   const interactive = useEditorStore((s) => s.previewMode === "normal" && s.activeTool === "select");
   const renderAsset = usePaintedAsset(asset, layer);
@@ -60,7 +69,7 @@ function LayerNode({
 
   const handleMouseDown = useCallback(
     (e: KonvaEventObject<MouseEvent>) => {
-      if (isPanning || e.evt.button !== 0) return;
+      if (panning || isPanning || e.evt.button !== 0) return;
       const s = useEditorStore.getState();
       const additive = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey;
       const selected = validSelection(s.layers, s.selectedIds);
@@ -71,7 +80,7 @@ function LayerNode({
       }
       // else keep selection — lets a group drag move all selected nodes
     },
-    [layer.id]
+    [layer.id, panning]
   );
 
   const handleDragStart = useCallback(
@@ -128,7 +137,7 @@ function LayerNode({
           );
           if (a) others.push(a);
         }
-        const snap = snapAABB(aabb, collectSnapTargets(s.canvas, others, exclude), 8 / vp.scale);
+        const snap = snapAABB(aabb, collectSnapTargets(s.canvas, others), 8 / vp.scale);
         cx += snap.dx;
         cy += snap.dy;
         node.position({ x: cx, y: cy });
@@ -169,8 +178,8 @@ function LayerNode({
       rotation={t.rotation}
       opacity={layer.opacity}
       visible={layer.visible}
-      listening={interactive && !layer.locked}
-      draggable={interactive && !layer.locked}
+      listening={interactive && !panning && !layer.locked}
+      draggable={interactive && !panning && !layer.locked}
       onMouseDown={handleMouseDown}
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}
@@ -308,6 +317,7 @@ export function CanvasEditor() {
       if (e.code === "Space" && !e.repeat) {
         const target = e.target as HTMLElement;
         if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+        if (useUIStore.getState().openDialogs > 0) return;
         e.preventDefault();
         spaceHeldRef.current = true;
         setSpaceHeld(true);
@@ -353,12 +363,15 @@ export function CanvasEditor() {
         .set({ x: x + ev.clientX - startX, y: y + ev.clientY - startY });
     };
     const onBlur = () => cleanup();
+    // a release outside the canvas must not open the WebView2 context menu
+    const preventContextMenu = (ev: MouseEvent) => ev.preventDefault();
     const cleanup = (updateState = true) => {
       isPanning = false;
       if (updateState) setMousePanning(false);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("contextmenu", preventContextMenu);
       panCleanupRef.current = null;
     };
     const onUp = (ev: MouseEvent) => {
@@ -368,6 +381,7 @@ export function CanvasEditor() {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("contextmenu", preventContextMenu);
   }, []);
 
   /**
@@ -377,10 +391,14 @@ export function CanvasEditor() {
    */
   const handleCanvasMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      // One gesture owns the pointer at a time: no draw start while a pan is
+      // running, and no pan while a draw is running (re-entrant gestures
+      // committed unrelated shapes or panned mid-draw).
+      if (isPanning || drag) return;
       if (e.button === 0 && !spaceHeldRef.current && startDraw(e)) return;
       startPan(e);
     },
-    [startDraw, startPan]
+    [drag, startDraw, startPan]
   );
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -391,7 +409,7 @@ export function CanvasEditor() {
   }, []);
 
   const handleStageMouseDown = useCallback((e: KonvaEventObject<MouseEvent>) => {
-    if (isPanning || e.evt.button !== 0) return;
+    if (isPanning || spaceHeldRef.current || e.evt.button !== 0) return;
     if (e.target === e.target.getStage()) {
       useEditorStore.getState().clearSelection();
     }
@@ -445,6 +463,7 @@ export function CanvasEditor() {
               asset={layer.assetId ? assets[layer.assetId] ?? null : null}
               nodeRefs={nodeRefs}
               onNodeChange={onNodeChange}
+              panning={spaceHeld || mousePanning}
             />
           ))}
         </KonvaLayer>

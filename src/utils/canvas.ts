@@ -1,6 +1,6 @@
 /** Shared low-level canvas helpers. */
 
-export type AnyCanvas = HTMLCanvasElement;
+type AnyCanvas = HTMLCanvasElement;
 
 /**
  * Create a 2D canvas. Regular HTMLCanvasElement is used (not OffscreenCanvas)

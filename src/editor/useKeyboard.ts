@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { hasPendingTransaction, useEditorStore } from "../layers/layerStore";
 import { useViewportStore } from "./ViewportManager";
+import { useUIStore } from "../ui/uiStore";
 import { SHORTCUT_TOOL, isShapeTool } from "../shapes/shapeTypes";
 
 /** Input types that consume typing keys — everything else (range, color…) lets shortcuts through. */
@@ -32,6 +33,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export function useKeyboard() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A modal dialog owns the keyboard: no document shortcuts behind it
+      // (Delete used to remove layers while the export dialog was open).
+      if (useUIStore.getState().openDialogs > 0) return;
       if (isTypingTarget(e.target)) return;
       const target = e.target as HTMLInputElement | null;
       if (target?.tagName === "INPUT" && target.type === "range" &&

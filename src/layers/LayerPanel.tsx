@@ -21,8 +21,10 @@ export function LayerPanel({ width, collapsed }: { width: number; collapsed: boo
   const assets = useAssetStore((s) => s.assets);
   const selectedIds = validSelection(layers, useEditorStore((s) => s.selectedIds));
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [drag, setDrag] = useState<{ from: number; over: number } | null>(null);
+  const [drag, setDrag] = useState<{ fromId: string; overId: string } | null>(null);
   const [merging, setMerging] = useState(false);
+  // Fixed anchor for shift range selection: the last row chosen without Shift.
+  const anchorIdRef = useRef<string | null>(null);
 
   const display = layers.map((layer, index) => ({ layer, index })).reverse();
 
@@ -31,12 +33,13 @@ export function LayerPanel({ width, collapsed }: { width: number; collapsed: boo
     const additive = e.ctrlKey || e.metaKey;
     if (additive) {
       s.toggleSelection(id, true);
+      anchorIdRef.current = id;
       return;
     }
-    if (e.shiftKey && selectedIds.length > 0) {
-      // range selection in display order
+    if (e.shiftKey && anchorIdRef.current) {
+      // range selection in display order, anchored at the last plain pick
       const ids = layers.map((l) => l.id);
-      const anchor = ids.indexOf(selectedIds[selectedIds.length - 1]);
+      const anchor = ids.indexOf(anchorIdRef.current);
       const target = ids.indexOf(id);
       if (anchor >= 0 && target >= 0) {
         const [a, b] = anchor < target ? [anchor, target] : [target, anchor];
@@ -45,18 +48,52 @@ export function LayerPanel({ width, collapsed }: { width: number; collapsed: boo
       }
     }
     s.setSelection([id]);
+    anchorIdRef.current = id;
   };
 
-  const handleDrop = (overDisplay: number) => {
-    if (!drag || drag.from === overDisplay) {
+  // Drag identifiers are layer ids, not display indices: the stack can change
+  // while a row is being dragged, and a stale index could splice out of bounds.
+  const dragFromIndex = drag ? display.findIndex((d) => d.layer.id === drag.fromId) : -1;
+  const dragOverIndex = drag ? display.findIndex((d) => d.layer.id === drag.overId) : -1;
+
+  const handleDrop = () => {
+    if (!drag || drag.fromId === drag.overId) {
       setDrag(null);
       return;
     }
-    const len = layers.length;
-    const from = len - 1 - drag.from;
-    // Moving down places after the target; moving up places before it.
-    useEditorStore.getState().reorder(from, len - 1 - overDisplay);
+    const s = useEditorStore.getState();
+    const from = s.layers.findIndex((l) => l.id === drag.fromId);
+    const over = s.layers.findIndex((l) => l.id === drag.overId);
     setDrag(null);
+    if (from < 0 || over < 0) return;
+    // Moving down places after the target; moving up places before it.
+    s.reorder(from, over);
+  };
+
+  const addLayer = () => {
+    const s = useEditorStore.getState();
+    const base = t("layerDefaultName");
+    const taken = new Set(s.layers.map((l) => l.name));
+    let n = s.layers.length + 1;
+    while (taken.has(`${base} ${n}`)) n += 1;
+    s.addEmptyLayer(`${base} ${n}`);
+  };
+
+  const mergeLayers = async () => {
+    setMerging(true);
+    try {
+      if (!useEditorStore.getState().layers.some((l) => l.visible)) {
+        useEditorStore.getState().setNotice(t("mergeLayersEmpty"));
+        return;
+      }
+      const merged = await mergeCurrentLayers(t("mergedLayerName"));
+      if (!merged) useEditorStore.getState().setNotice(t("mergeLayersUnavailable"));
+    } catch (error) {
+      console.error("Merge layers failed:", error);
+      useEditorStore.getState().setNotice(t("mergeLayersFailed"));
+    } finally {
+      setMerging(false);
+    }
   };
 
   return (
@@ -71,29 +108,14 @@ export function LayerPanel({ width, collapsed }: { width: number; collapsed: boo
             className="btn"
             title={t("mergeLayersHint")}
             disabled={layers.length < 2 || merging}
-            onClick={async () => {
-              setMerging(true);
-              try {
-                const merged = await mergeCurrentLayers(t("mergedLayerName"));
-                if (!merged) useEditorStore.getState().setNotice(t("mergeLayersUnavailable"));
-              } catch (error) {
-                console.error("Merge layers failed:", error);
-                useEditorStore.getState().setNotice(t("mergeLayersFailed"));
-              } finally {
-                setMerging(false);
-              }
-            }}
+            onClick={() => void mergeLayers()}
           >
             {merging ? t("mergingLayers") : t("mergeLayers")}
           </button>
           <button
             className="icon-btn"
             title={t("addLayer")}
-            onClick={() =>
-              useEditorStore
-                .getState()
-                .addEmptyLayer(`${t("layerDefaultName")} ${useEditorStore.getState().layers.length + 1}`)
-            }
+            onClick={addLayer}
           >
             <PlusIcon />
           </button>
@@ -117,15 +139,26 @@ export function LayerPanel({ width, collapsed }: { width: number; collapsed: boo
       </div>
 
       <div className="layer-list">
-        {display.map(({ layer, index }, displayIndex) => (
+        {display.map(({ layer, index }) => (
           <LayerRow
             key={layer.id}
             layer={layer}
             asset={layer.assetId ? assets[layer.assetId] ?? null : null}
             selected={selectedIds.includes(layer.id)}
             renaming={renamingId === layer.id}
-            dropBefore={drag?.over === displayIndex && drag.from !== displayIndex && drag.from > displayIndex}
-            dropAfter={drag?.over === displayIndex && drag.from !== displayIndex && drag.from < displayIndex}
+            dragging={drag?.fromId === layer.id}
+            dropBefore={
+              drag != null &&
+              drag.overId === layer.id &&
+              drag.fromId !== layer.id &&
+              dragFromIndex > dragOverIndex
+            }
+            dropAfter={
+              drag != null &&
+              drag.overId === layer.id &&
+              drag.fromId !== layer.id &&
+              dragFromIndex < dragOverIndex
+            }
             onSelect={(e) => select(layer.id, e)}
             onStartRename={() => setRenamingId(layer.id)}
             onEndRename={(name) => {
@@ -152,11 +185,10 @@ export function LayerPanel({ width, collapsed }: { width: number; collapsed: boo
             onMoveDown={
               index > 0 ? () => useEditorStore.getState().reorder(index, index - 1) : undefined
             }
-            onDragStart={() => setDrag({ from: displayIndex, over: displayIndex })}
-            onDragOver={() => setDrag((d) => (d ? { ...d, over: displayIndex } : d))}
-            onDrop={() => handleDrop(displayIndex)}
+            onDragStart={() => setDrag({ fromId: layer.id, overId: layer.id })}
+            onDragOver={() => setDrag((d) => (d ? { ...d, overId: layer.id } : d))}
+            onDrop={handleDrop}
             onDragEnd={() => setDrag(null)}
-            dragging={drag?.from === displayIndex}
           />
         ))}
         {layers.length === 0 && <div className="muted small empty-list">—</div>}
@@ -216,6 +248,15 @@ function LayerRow({
     if (renaming) setNameDraft(layer.name);
   }, [renaming, layer.name]);
 
+  // focus + select exactly once per rename session. (Selecting in the ref
+  // callback re-ran on every keystroke and overwrote the draft with one char.)
+  useEffect(() => {
+    if (renaming) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [renaming]);
+
   return (
     <div
       className={[
@@ -247,11 +288,7 @@ function LayerRow({
       </div>
       {renaming ? (
         <input
-          ref={(el) => {
-            inputRef.current = el;
-            el?.focus();
-            el?.select();
-          }}
+          ref={inputRef}
           value={nameDraft}
           onChange={(e) => setNameDraft(e.target.value)}
           onMouseDown={(e) => e.stopPropagation()}
@@ -292,7 +329,8 @@ function LayerRow({
         className="icon-btn"
         onMouseDown={(e) => e.stopPropagation()}
         onClick={onToggleLock}
-        title={layer.locked ? "🔒" : "🔓"}
+        title={t(layer.locked ? "lockLayer" : "unlockLayer")}
+        aria-label={t(layer.locked ? "lockLayer" : "unlockLayer")}
       >
         {layer.locked ? <LockIcon /> : <UnlockIcon />}
       </button>

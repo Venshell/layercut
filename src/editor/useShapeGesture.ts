@@ -11,11 +11,12 @@ import { dropPointToCanvas } from "../import/importFiles";
 import { createShapeLayer } from "../shapes/createShape";
 import { constrainDrag, defaultDrag, isClickDrag } from "../shapes/shapeGeometry";
 import { isShapeTool, type Drag, type Point, type ShapeKind } from "../shapes/shapeTypes";
+import { round2 } from "../utils/geometry";
 import { useViewportStore } from "./ViewportManager";
 
 /** Drag coordinates are rounded so generated geometry keeps tidy numbers. */
 function roundPoint(p: Point): Point {
-  return { x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100 };
+  return { x: round2(p.x), y: round2(p.y) };
 }
 
 export interface ShapeGesture {
@@ -84,10 +85,13 @@ export function useShapeGesture({
       const initial: Drag = { from: roundPoint(origin), to: roundPoint(origin) };
       pending.current = initial;
       setDrag(initial);
+      // last unconstrained pointer position, for re-applying modifiers on
+      // mouseup (holding Shift without moving must still constrain)
+      let rawPoint = origin;
 
       const onMove = (ev: MouseEvent) => {
-        const p = dropPointToCanvas(ev.clientX, ev.clientY, rect, viewport);
-        const next = apply(p, ev.shiftKey, ev.altKey);
+        rawPoint = dropPointToCanvas(ev.clientX, ev.clientY, rect, viewport);
+        const next = apply(rawPoint, ev.shiftKey, ev.altKey);
         pending.current = next;
         setDrag(next);
       };
@@ -95,8 +99,9 @@ export function useShapeGesture({
       const cleanup = () => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
-        window.removeEventListener("keydown", onKey);
+        window.removeEventListener("keydown", onKey, true);
         window.removeEventListener("blur", onCancel);
+        window.removeEventListener("contextmenu", preventContextMenu);
         cleanupRef.current = null;
       };
 
@@ -108,10 +113,13 @@ export function useShapeGesture({
         commit(kind, gesture);
       };
 
-      const onUp = () => {
-        const raw = pending.current ?? initial;
-        if (!isClickDrag(raw.from, raw.to)) {
-          finish(raw);
+      const onUp = (ev: MouseEvent) => {
+        // resample the modifier keys from the event itself, not from the last
+        // mousemove — a key pressed (or released) without moving still counts
+        const final = apply(rawPoint, ev.shiftKey, ev.altKey);
+        pending.current = final;
+        if (!isClickDrag(final.from, final.to)) {
+          finish(final);
           return;
         }
         // A click without a drag still produces a usable default-sized shape.
@@ -126,14 +134,25 @@ export function useShapeGesture({
       };
 
       const onKey = (ev: KeyboardEvent) => {
-        if (ev.key === "Escape") onCancel();
+        if (ev.key === "Escape") {
+          // cancel only the gesture; the editor's Esc (exit tool / clear
+          // selection) must not fire for the same keypress. Capture phase runs
+          // before the editor's bubble-phase listener, so stopping here wins.
+          ev.stopImmediatePropagation();
+          ev.preventDefault();
+          onCancel();
+        }
       };
+
+      // a right-release outside the canvas would open the WebView2 menu
+      const preventContextMenu = (ev: MouseEvent) => ev.preventDefault();
 
       cleanupRef.current = cleanup;
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
-      window.addEventListener("keydown", onKey);
+      window.addEventListener("keydown", onKey, true);
       window.addEventListener("blur", onCancel);
+      window.addEventListener("contextmenu", preventContextMenu);
       return true;
     },
     [commit, containerRef]

@@ -31,12 +31,12 @@ function EditorShell({ onHome }: { onHome: () => void }) {
     document.title = `${isDirty ? "● " : ""}${projectName || "LayerCut"}${projectName ? " — LayerCut" : ""}`;
   }, [projectName, isDirty]);
 
-  // Ctrl+S saves
+  // Ctrl+S saves (never while a dialog is already open)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        setDialog("save");
+        if (useUIStore.getState().openDialogs === 0) setDialog("save");
       }
     };
     window.addEventListener("keydown", onKey);

@@ -1,5 +1,5 @@
 import { useI18n } from "../i18n";
-import { useUIStore, type PanelSide } from "./uiStore";
+import { PANEL_MAX, PANEL_MIN, useUIStore, type PanelSide } from "./uiStore";
 
 /**
  * Draggable divider between the side panels and the canvas.
@@ -22,7 +22,7 @@ export function Divider({ side }: { side: PanelSide }) {
     const onMove = (ev: MouseEvent) => {
       const dx = ev.clientX - startX;
       const raw = side === "left" ? startWidth + dx : startWidth - dx;
-      setPanel(side, { width: Math.min(460, Math.max(190, Math.round(raw))) });
+      setPanel(side, { width: Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(raw))) });
     };
     const onUp = () => {
       document.body.classList.remove("resizing");

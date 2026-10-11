@@ -304,14 +304,6 @@ body.resizing .divider::after {
   width: 2px;
 }
 
-.divider-left::after {
-  left: 3px;
-}
-
-.divider-right::after {
-  left: 3px;
-}
-
 .divider.collapsed::after {
   background: var(--border);
 }
@@ -688,6 +680,7 @@ body.resizing .canvas-area {
 .form-row {
   display: flex;
   gap: 8px;
+  margin-bottom: 8px;
 }
 
 .form-row label {
@@ -896,10 +889,6 @@ input[type="color"] {
   cursor: default;
 }
 
-.form-row {
-  margin-bottom: 8px;
-}
-
 .scale-row {
   display: flex;
   align-items: center;
@@ -910,10 +899,6 @@ input[type="color"] {
 .scale-row .ctl-input {
   width: 74px;
   flex-shrink: 0;
-}
-
-.explode-slider .ctl-slider {
-  width: 110px;
 }
 
 .file-list-head {
@@ -1000,41 +985,6 @@ input[type="color"] {
 .saved-tag {
   color: var(--text-dim);
   margin-left: 4px;
-}
-
-.recents-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 8px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.recent-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.recent-open {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-panel-2);
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-}
-
-.recent-open:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
 }
 
 .recent-name {
@@ -1215,13 +1165,6 @@ input[type="color"] {
   opacity: 1;
 }
 
-/* ---------- Project console (dialog, legacy) ---------- */
-.console-section {
-  border-top: 1px solid var(--border-soft);
-  margin-top: 14px;
-  padding-top: 12px;
-}
-
 .console-name {
   width: 100%;
   height: 28px;
@@ -1239,12 +1182,6 @@ input[type="color"] {
   border-color: var(--accent);
 }
 
-.recents-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 /* scrollbars */
 ::-webkit-scrollbar {
   width: 10px;
@@ -1259,4 +1196,23 @@ input[type="color"] {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* language toggle has no icon: keep it visually stable at both labels */
+.btn.lang {
+  min-width: 42px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.svg-paint-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.scale-input {
+  width: 64px;
+  flex-shrink: 0;
 }
