@@ -50,3 +50,44 @@ export function analyzeSvgSafety(svgText: string): SvgSafety {
   }
   return { safe: offending.size === 0, offending: [...offending] };
 }
+
+const ALPHA_PROPERTIES = ["opacity", "fill-opacity", "stroke-opacity"] as const;
+
+function alphaOf(value: string): number | null {
+  const v = value.trim();
+  if (/percent$/i.test(v)) {
+    const pct = parseFloat(v);
+    return Number.isFinite(pct) ? pct / 100 : null;
+  }
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * True when the source paints anything between invisible and fully opaque
+ * (element alpha, per-channel alpha, or a partially opaque group). Vector
+ * boolean output has no alpha, so such layers are rejected instead of being
+ * silently flattened (svg_partial_opacity contract).
+ */
+export function svgHasPartialAlpha(svgText: string): boolean {
+  try {
+    const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
+    if (doc.querySelector("parsererror")) return false;
+    const elements: Element[] = [doc.documentElement];
+    while (elements.length > 0) {
+      const el = elements.pop()!;
+      const style = (el as SVGElement).style;
+      for (const prop of ALPHA_PROPERTIES) {
+        const raw = style?.getPropertyValue(prop) || el.getAttribute(prop);
+        if (raw === null) continue;
+        const alpha = alphaOf(raw);
+        // alpha 0 contributes nothing and stays representable
+        if (alpha !== null && alpha > 0 && alpha < 1) return true;
+      }
+      for (const child of Array.from(el.children)) elements.push(child);
+    }
+  } catch {
+    /* unparsable source is someone else's error */
+  }
+  return false;
+}

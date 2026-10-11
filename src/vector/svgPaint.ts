@@ -7,7 +7,9 @@ const variants = new Map<string, Promise<LayerAsset>>();
 
 function paintValue(el: Element, property: "fill" | "stroke", inherited: string): string {
   const style = (el as SVGElement).style;
-  return style?.getPropertyValue(property).trim() || el.getAttribute(property) || inherited;
+  // attribute values may carry stray whitespace ("none ") — trim before the
+  // caller's "none" comparison, or an unpainted channel would get painted
+  return style?.getPropertyValue(property).trim() || (el.getAttribute(property) || "").trim() || inherited;
 }
 
 /** Build one layer's effective SVG without changing the imported source. */
@@ -50,7 +52,7 @@ export function paintedAsset(asset: LayerAsset, layer: Layer): Promise<LayerAsse
   const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`;
   const pending = new Promise<LayerAsset>((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve({ ...asset, bitmap: image, previewUrl: url, svgUrl: url });
+    image.onload = () => resolve({ ...asset, bitmap: image, previewUrl: url });
     image.onerror = () => reject(new Error("SVG paint decode failed"));
     image.src = url;
   });
@@ -58,6 +60,14 @@ export function paintedAsset(asset: LayerAsset, layer: Layer): Promise<LayerAsse
   pending.catch(() => { if (variants.get(key) === pending) variants.delete(key); });
   if (variants.size > MAX_VARIANTS) variants.delete(variants.keys().next().value!);
   return pending;
+}
+
+/** Drop repainted variants of one source asset (used when the asset is released). */
+export function releasePaintedVariants(assetId: string): void {
+  const prefix = `${assetId}|`;
+  for (const key of [...variants.keys()]) {
+    if (key.startsWith(prefix)) variants.delete(key);
+  }
 }
 
 export async function paintedAssetsForLayers(

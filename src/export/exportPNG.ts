@@ -1,6 +1,6 @@
 import type { CanvasSettings, Layer } from "../layers/layerTypes";
 import type { LayerAsset } from "../assets/assetStore";
-import { computeOcclusion, type OcclusionResult } from "../occlusion/OcclusionEngine";
+import { computeOcclusion } from "../occlusion/OcclusionEngine";
 import { drawLayerToContext } from "../renderer/RasterRenderer";
 import { create2DCanvas } from "../utils/canvas";
 import { isLayerOccluder } from "../layers/layerUtils";
@@ -54,16 +54,6 @@ export function rasterizeComposite(
     drawLayerToContext(ctx, layer, asset);
   }
   return out;
-}
-
-/** Run the occlusion engine once and reuse the result for every export. */
-export function computeOcclusionForExport(
-  layers: Layer[],
-  canvas: CanvasSettings,
-  assets: Record<string, LayerAsset>,
-  scale: number
-): OcclusionResult {
-  return computeOcclusion(layers, canvas, assets, scale);
 }
 
 /** Exportable layers = visible layers, bottom→top, with sequential index. */

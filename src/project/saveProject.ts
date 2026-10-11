@@ -4,7 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { importPNGFile } from "../import/importPNG";
 import { importSVGFile } from "../import/importSVG";
-import { useAssetStore } from "../assets/assetStore";
+import { useAssetStore, releaseAssetsExcept } from "../assets/assetStore";
 import { useEditorStore } from "../layers/layerStore";
 import { useViewportStore } from "../editor/ViewportManager";
 import { sanitizeFileName } from "../layers/layerUtils";
@@ -14,8 +14,8 @@ import {
   PROJECT_EXT,
   embeddedAssetBlob,
   isValidProjectJson,
+  migrateProject,
   serializeProject,
-  type SerializedProject,
 } from "./projectTypes";
 import { readExportConfig, writeExportConfig } from "./exportConfig";
 
@@ -54,6 +54,8 @@ export async function saveProjectAs(rawName: string): Promise<boolean> {
 /**
  * Load a serialized project: rebuild assets through the normal import
  * pipeline (new asset ids), remap layer references, replace the document.
+ * A single broken asset degrades its layers to empty instead of failing the
+ * whole document.
  */
 export async function loadProjectJson(json: string, name?: string): Promise<void> {
   let parsed: unknown;
@@ -62,8 +64,9 @@ export async function loadProjectJson(json: string, name?: string): Promise<void
   } catch {
     throw new Error("invalid json");
   }
-  if (!isValidProjectJson(parsed)) throw new Error("not a layercut project");
-  const project = parsed as SerializedProject;
+  if (typeof parsed !== "object" || parsed === null) throw new Error("not a layercut project");
+  const project = migrateProject(parsed as Record<string, unknown>);
+  if (!project || !isValidProjectJson(project)) throw new Error("not a layercut project");
 
   // rebuild assets (ids differ from the saved ones)
   const idMap = new Map<string, string>();
@@ -79,8 +82,9 @@ export async function loadProjectJson(json: string, name?: string): Promise<void
         idMap.set(oldId, asset.id);
       }
     } catch (e) {
-      console.warn("project asset failed to load", e);
-      throw new Error(`project asset failed to load: ${sa.fileName}`);
+      // decode failure is contained: layers keep a null assetId and render
+      // as empty, so one broken image cannot sink the whole document
+      console.warn("project asset failed to load:", sa.fileName, e);
     }
   }
 
@@ -114,6 +118,8 @@ export async function loadProjectJson(json: string, name?: string): Promise<void
 
   const projectName = (name ?? project.name ?? "").trim();
   useEditorStore.getState().loadProject({ canvas, layers, name: projectName });
+  // the previous document is unreachable now (history reset) — free its assets
+  releaseAssetsExcept(new Set(layers.map((l) => l.assetId).filter((id): id is string => Boolean(id))));
   if (project.exportConfig) writeExportConfig(project.exportConfig);
   useViewportStore.getState().fit(canvas.width, canvas.height);
 }

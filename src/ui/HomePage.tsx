@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useEditorStore } from "../layers/layerStore";
+import { releaseAssetsExcept } from "../assets/assetStore";
 import { loadProjectJson, openProjectFile, saveProjectAs } from "../project/saveProject";
 import {
   clearAutosave,
@@ -78,6 +79,8 @@ export function HomePage({ onEnter }: { onEnter: () => void }) {
     if (w <= 0 || h <= 0) return;
     const s = useEditorStore.getState();
     s.newCanvas({ width: w, height: h, background });
+    // the replaced document is unreachable (history reset) — free its sources
+    releaseAssetsExcept(new Set());
     s.setProjectName(name.trim());
     onEnter();
   };
@@ -161,8 +164,7 @@ export function HomePage({ onEnter }: { onEnter: () => void }) {
         {recovery && recoveryInfo && (
           <div className="recovery-banner">
             <span>
-              ⏻ {t("autosaveFoundPrefix")} {formatTime(recovery.savedAt)}{" "}
-              {t("autosaveFoundSuffix")}
+              ⏻ {t("autosaveFoundPrefix")} · {formatTime(recovery.savedAt)}
               {recovery.name ? ` · ${recovery.name}` : ""} · {recoveryInfo.layers} ⬚
             </span>
             <span className="recovery-actions">

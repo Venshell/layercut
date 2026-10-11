@@ -24,4 +24,3 @@ export function resetProject(): void {
 }
 
 export type PaperPathItem = paper.PathItem;
-export type PaperItem = paper.Item;

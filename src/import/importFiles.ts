@@ -1,5 +1,6 @@
 import type { Layer } from "../layers/layerTypes";
 import { useEditorStore } from "../layers/layerStore";
+import { getT } from "../i18n";
 import { importPNGFile, pngLayerFromAsset } from "./importPNG";
 import { importSVGFile, svgLayerFromAsset } from "./importSVG";
 
@@ -33,7 +34,7 @@ export async function importFiles(files: File[]): Promise<Layer[]> {
   }
   if (errors.length > 0) {
     const { setNotice } = useEditorStore.getState();
-    setNotice(`⚠ ${errors.length} file(s) failed to import`);
+    setNotice(`⚠ ${getT()("importFailed")} (${errors.length})`);
   }
   return layers;
 }

@@ -27,11 +27,14 @@ export const zh = {
   mergedLayerName: "合并图层",
   mergeLayersUnavailable: "当前图层无法合并，或合并期间画布已变化",
   mergeLayersFailed: "合并图层失败",
+  mergeLayersEmpty: "没有可见图层可合并",
   layerDefaultName: "图层",
   hideLayer: "隐藏图层",
   showLayer: "显示图层",
   hiddenOcclusionOn: "隐藏时保留遮挡：开",
   hiddenOcclusionOff: "隐藏时保留遮挡：关",
+  lockLayer: "锁定图层",
+  unlockLayer: "解锁图层",
 
   // Properties
   x: "X",
@@ -78,7 +81,7 @@ export const zh = {
   transparent: "透明",
   create: "创建",
   cancel: "取消",
-  createNote: "将替换当前内容（可用 Ctrl+Z 撤销）",
+  createNote: "将替换当前内容，且无法通过撤销找回",
 
   // Export dialog
   exportTitle: "导出",
@@ -96,6 +99,7 @@ export const zh = {
   formatSvg: "SVG 矢量",
   svgOnlyAllSvg: "参与输出或遮挡的图层必须均为 SVG（PNG / 空图层不可用）",
   svgUnsafe: "SVG 含暂不支持的元素",
+  svgPartialOpacity: "参与矢量导出的图层存在部分透明（0–100% 之间），布尔裁切暂不支持",
   svgCompositeUnavailable: "SVG 矢量导出不适用于合成图",
   scale: "缩放倍率",
   filePreview: "输出文件",
@@ -111,7 +115,6 @@ export const zh = {
   needLayers: "画布中还没有图层",
   folderTip: "将保存到所选文件夹",
   zipTip: "将下载 ZIP 压缩包，解压后获得全部输出文件",
-  compositeName: "合成图",
   hiddenLayersSkipped: "隐藏图层不单独导出；开启保留遮挡后仍会裁切下层",
 
   // Status bar
@@ -126,7 +129,6 @@ export const zh = {
   openProject: "打开工程",
   recentProjects: "最近工程",
   console: "工程控制台",
-  currentProject: "当前工程",
   createNew: "新建",
   openFromDisk: "从文件打开",
   saveTitle: "保存工程",
@@ -134,13 +136,10 @@ export const zh = {
   save: "保存",
   unnamedProject: "未命名",
   saveNote: "将保存 .layercut 文件（内嵌全部素材），并加入最近工程",
-  autosaveTitle: "自动恢复",
-  autosaveFoundPrefix: "检测到",
-  autosaveFoundSuffix: "的自动存档",
+  autosaveFoundPrefix: "检测到自动存档",
   restore: "恢复",
   discard: "丢弃",
   invalidProject: "无效的工程文件",
-  openFailed: "打开失败",
   saveFailed: "保存工程失败",
   recentsEmpty: "暂无最近工程",
   unsavedChanges: "未保存",
@@ -148,14 +147,13 @@ export const zh = {
 
   // Misc
   importFailed: "导入失败",
-  unsupportedFile: "不支持的文件类型",
   language: "语言",
   togglePanel: "拖拽调整宽度 · 双击收起 / 展开",
   backToConsole: "返回工程控制台",
   homeSubtitle: "非破坏性多图层遮挡 · 分层导出",
   createProject: "创建工程",
   canvasSize: "画布",
-  noAutosaveNote: "将替换当前编辑器内容（可用 Ctrl+Z 撤销）",
+  noAutosaveNote: "将替换当前编辑器内容，且无法通过撤销找回",
 };
 
 export type Dict = typeof zh;

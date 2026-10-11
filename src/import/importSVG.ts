@@ -22,7 +22,6 @@ export async function importSVGFile(file: File): Promise<{ asset: LayerAsset }> 
     naturalHeight: size.height,
     bitmap: img,
     svgText,
-    svgUrl: img.src,
     previewUrl: img.src,
   };
   useAssetStore.getState().put(asset);

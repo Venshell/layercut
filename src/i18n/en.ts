@@ -29,11 +29,14 @@ export const en: Dict = {
   mergedLayerName: "Merged layers",
   mergeLayersUnavailable: "These layers cannot be merged, or the canvas changed during merging",
   mergeLayersFailed: "Failed to merge layers",
+  mergeLayersEmpty: "No visible layers to merge",
   layerDefaultName: "Layer",
   hideLayer: "Hide layer",
   showLayer: "Show layer",
   hiddenOcclusionOn: "Keep occlusion when hidden: on",
   hiddenOcclusionOff: "Keep occlusion when hidden: off",
+  lockLayer: "Lock layer",
+  unlockLayer: "Unlock layer",
 
   // Properties
   x: "X",
@@ -80,7 +83,7 @@ export const en: Dict = {
   transparent: "Transparent",
   create: "Create",
   cancel: "Cancel",
-  createNote: "Replaces current content (Ctrl+Z to undo)",
+  createNote: "Replaces current content and cannot be undone",
 
   // Export dialog
   exportTitle: "Export",
@@ -98,6 +101,7 @@ export const en: Dict = {
   formatSvg: "SVG vector",
   svgOnlyAllSvg: "Every output or occluding layer must be SVG (PNG / empty layers are unsupported)",
   svgUnsafe: "SVG contains unsupported elements",
+  svgPartialOpacity: "A participating layer is partially transparent (between 0 and 100%); boolean cuts cannot represent it",
   svgCompositeUnavailable: "SVG vector export does not apply to Composite",
   scale: "Scale",
   filePreview: "Output files",
@@ -113,7 +117,6 @@ export const en: Dict = {
   needLayers: "Canvas has no layers",
   folderTip: "Files will be saved to the chosen folder",
   zipTip: "Download a ZIP archive and extract it to get all output files",
-  compositeName: "composite",
   hiddenLayersSkipped: "Hidden layers are not exported; retained occlusion still cuts lower layers",
 
   // Status bar
@@ -128,7 +131,6 @@ export const en: Dict = {
   openProject: "Open Project",
   recentProjects: "Recent Projects",
   console: "Project Console",
-  currentProject: "Current project",
   createNew: "New",
   openFromDisk: "Open from disk",
   saveTitle: "Save Project",
@@ -136,13 +138,10 @@ export const en: Dict = {
   save: "Save",
   unnamedProject: "Untitled",
   saveNote: "Saves a .layercut file (assets embedded) and adds it to Recent Projects",
-  autosaveTitle: "Autosave Recovery",
-  autosaveFoundPrefix: "Found an autosave from",
-  autosaveFoundSuffix: "",
+  autosaveFoundPrefix: "Found an autosave",
   restore: "Restore",
   discard: "Discard",
   invalidProject: "Invalid project file",
-  openFailed: "Failed to open",
   saveFailed: "Failed to save project",
   recentsEmpty: "No recent projects",
   unsavedChanges: "Unsaved",
@@ -150,12 +149,11 @@ export const en: Dict = {
 
   // Misc
   importFailed: "Import failed",
-  unsupportedFile: "Unsupported file type",
   language: "Language",
   togglePanel: "Drag to resize · double-click to collapse / expand",
   backToConsole: "Back to project console",
   homeSubtitle: "Non-destructive layer occlusion · layered export",
   createProject: "Create project",
   canvasSize: "Canvas",
-  noAutosaveNote: "Replaces the current editor content (Ctrl+Z to undo)",
+  noAutosaveNote: "Replaces the current editor content and cannot be undone",
 };

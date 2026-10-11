@@ -1,8 +1,9 @@
 import JSZip from "jszip";
-import { useAssetStore } from "../assets/assetStore";
+import { useAssetStore, type LayerAsset } from "../assets/assetStore";
 import { useEditorStore } from "../layers/layerStore";
 import { validSelection } from "../layers/layerUtils";
-import { canvasToBlob, computeOcclusionForExport, exportableLayers, rasterizeComposite } from "./exportPNG";
+import { canvasToBlob, downloadBlob, exportableLayers, rasterizeComposite } from "./exportPNG";
+import { computeOcclusion } from "../occlusion/OcclusionEngine";
 import {
   COMPOSITE_NAME_KEY,
   compositeBaseName,
@@ -11,7 +12,7 @@ import {
   resolveFileNames,
   type FileNameOverrides,
 } from "./naming";
-import { analyzeSvgSafety } from "../vector/svgSafety";
+import { analyzeSvgSafety, svgHasPartialAlpha } from "../vector/svgSafety";
 import { computeVectorOcclusion } from "../vector/svgBoolean";
 import { isLayerOccluder } from "../layers/layerUtils";
 import { paintedAssetsForLayers } from "../vector/svgPaint";
@@ -20,11 +21,6 @@ import type { Layer } from "../layers/layerTypes";
 export type ExportScope = "current" | "selected" | "all" | "composite";
 export type ExportFormat = "png" | "svg";
 export type ExportDestination = "folder" | "zip";
-
-export interface ExportOptions {
-  scope: ExportScope;
-  scale: number;
-}
 
 /** One planned output file: the name the dialog shows is the name that is written. */
 export interface PlannedExportFile {
@@ -51,6 +47,20 @@ function exportTargets(
 }
 
 /**
+ * A layer produces an output file only if the raster/vector engines can render
+ * it: a source asset and a non-zero opacity. Filtering here keeps the promise
+ * that the dialog preview is exactly the set of files that gets written — an
+ * entry that would be skipped during writing must not appear (or be written)
+ * at all.
+ */
+function layerProducesOutput(layer: Layer, assets: Record<string, LayerAsset>): boolean {
+  if (layer.type === "empty") return false;
+  const asset = layer.assetId ? assets[layer.assetId] ?? null : null;
+  // missing opacity reads as fully opaque, matching the raster engines
+  return Boolean(asset) && (layer.opacity ?? 1) > 0;
+}
+
+/**
  * The single source of truth for output file names. The export dialog previews
  * exactly this list and the writers consume the same list, so a rename or an
  * automatic "(1)" can never differ between preview and output.
@@ -60,9 +70,10 @@ export function planExportFiles(opts: {
   selectedIds: string[];
   scope: ExportScope;
   ext: string;
+  assets: Record<string, LayerAsset>;
   overrides?: FileNameOverrides;
 }): PlannedExportFile[] {
-  const { layers, selectedIds, scope, ext, overrides } = opts;
+  const { layers, selectedIds, scope, ext, assets, overrides } = opts;
   const override = (key: string) => normalizedBase(overrides?.[key]);
 
   if (scope === "composite") {
@@ -70,7 +81,9 @@ export function planExportFiles(opts: {
     return [{ key: COMPOSITE_NAME_KEY, index: 0, base, fileName: resolveFileNames([base], ext)[0] }];
   }
 
-  const targets = exportTargets(layers, selectedIds, scope);
+  const targets = exportTargets(layers, selectedIds, scope).filter(({ layer }) =>
+    layerProducesOutput(layer, assets)
+  );
   const bases = targets.map(
     ({ layer, index }) => override(layer.id) ?? defaultBaseName(index + 1, layer.name)
   );
@@ -81,6 +94,39 @@ export function planExportFiles(opts: {
     base: bases[i],
     fileName: names[i],
   }));
+}
+
+export type SvgGateStatus =
+  | { ok: true }
+  | {
+      ok: false;
+      code: "svg_needs_all_svg" | "svg_unsafe" | "svg_partial_opacity";
+      offending?: string[];
+    };
+
+/**
+ * The one "SVG only" gate (§7.3), shared verbatim by the dialog preview and
+ * the writer so both can never disagree about whether SVG export applies.
+ */
+export function checkSvgExportGate(
+  layers: Layer[],
+  assets: Record<string, LayerAsset>
+): SvgGateStatus {
+  if (layers.some((l) => l.type !== "empty" && isLayerOccluder(l) && l.type !== "svg")) {
+    return { ok: false, code: "svg_needs_all_svg" }; // a non-empty PNG layer exists
+  }
+  for (const layer of layers.filter(isLayerOccluder)) {
+    // Boolean algebra has no alpha: anything between invisible and fully
+    // opaque cannot be represented by the cut (and must not be flattened).
+    if (layer.opacity > 0 && layer.opacity < 1) return { ok: false, code: "svg_partial_opacity" };
+    const asset = layer.assetId ? assets[layer.assetId] ?? null : null;
+    if (asset?.kind === "svg" && asset.svgText) {
+      if (svgHasPartialAlpha(asset.svgText)) return { ok: false, code: "svg_partial_opacity" };
+      const safety = analyzeSvgSafety(asset.svgText);
+      if (!safety.safe) return { ok: false, code: "svg_unsafe", offending: safety.offending };
+    }
+  }
+  return { ok: true };
 }
 
 interface WritableFileHandle {
@@ -105,15 +151,8 @@ async function saveViaFolder(
 async function saveZip(files: { name: string; blob: Blob }[]): Promise<void> {
   const zip = new JSZip();
   for (const f of files) zip.file(f.name, f.blob);
-  const blob = await zip.generateAsync({ type: "blob" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "layercut_export.zip";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+  downloadBlob(blob, "layercut_export.zip");
 }
 
 /**
@@ -136,7 +175,7 @@ export async function exportLayers(
   const { canvas, layers, selectedIds } = useEditorStore.getState();
   const assets = useAssetStore.getState().assets;
   const ext = format === "svg" ? "svg" : "png";
-  const plan = planExportFiles({ layers, selectedIds, scope, ext, overrides });
+  const plan = planExportFiles({ layers, selectedIds, scope, ext, assets, overrides });
   if (plan.length === 0) return "cancelled";
 
   if (format === "svg") {
@@ -149,16 +188,19 @@ export async function exportLayers(
 
   if (scope === "composite") {
     const blob = await canvasToBlob(rasterizeComposite(layers, canvas, renderAssets, scale));
+    onProgress?.(1, 1);
     return saveOrZip([{ name: plan[0].fileName, blob }], destination);
   }
 
   // one occlusion pass serves every layer (project plan §15)
-  const occlusion = computeOcclusionForExport(layers, canvas, renderAssets, scale);
+  const occlusion = computeOcclusion(layers, canvas, renderAssets, scale);
   const files: { name: string; blob: Blob }[] = [];
   let done = 0;
   for (const file of plan) {
     const raster = occlusion.byLayerId.get(file.key);
-    if (!raster) continue;
+    // The plan only contains layers the engines can render — a missing raster
+    // is a bug, not a reason to silently write fewer files than previewed.
+    if (!raster) throw new Error("export_layer_missing");
     const blob = await canvasToBlob(raster);
     files.push({ name: file.fileName, blob });
     done += 1;
@@ -175,33 +217,24 @@ async function exportVectorLayers(
   onProgress?: (done: number, total: number) => void,
   destination: ExportDestination = "folder"
 ): Promise<"folder" | "zip" | "cancelled"> {
-  const { canvas, layers } = useEditorStore.getState();
+  const { layers } = useEditorStore.getState();
   const assets = useAssetStore.getState().assets;
 
-  // An empty layer has no content: it outputs nothing and rasterizes to no
-  // occlusion, so it must not veto SVG export (the vector engine skips it too).
-  if (layers.some((layer) => layer.type !== "empty" && isLayerOccluder(layer) && layer.type !== "svg")) {
-    throw new Error("svg_needs_all_svg"); // a non-empty PNG layer exists (§7.3)
+  const gate = checkSvgExportGate(layers, assets);
+  if (!gate.ok) {
+    const err = new Error(gate.code) as Error & { code?: string; offending?: string[] };
+    err.code = gate.code;
+    err.offending = gate.offending;
+    throw err;
   }
 
-  for (const layer of layers.filter(isLayerOccluder)) {
-    const asset = layer.assetId ? assets[layer.assetId] : null;
-    if (asset?.kind === "svg" && asset.svgText) {
-      const safety = analyzeSvgSafety(asset.svgText);
-      if (!safety.safe) {
-        const err = new Error("svg_unsafe") as Error & { offending?: string[] };
-        err.offending = safety.offending;
-        throw err;
-      }
-    }
-  }
-
+  const { canvas } = useEditorStore.getState();
   const result = computeVectorOcclusion(layers, assets, canvas, scale);
   const files: { name: string; blob: Blob }[] = [];
   let done = 0;
   for (const file of plan) {
     const svg = result.byLayerId.get(file.key);
-    if (!svg) continue;
+    if (!svg) throw new Error("export_layer_missing");
     files.push({
       name: file.fileName,
       blob: new Blob([svg], { type: "image/svg+xml" }),
@@ -209,7 +242,6 @@ async function exportVectorLayers(
     done += 1;
     onProgress?.(done, plan.length);
   }
-  if (files.length === 0) throw new Error("svg_unsafe");
 
   return saveOrZip(files, destination);
 }
@@ -229,13 +261,19 @@ async function saveOrZip(files: { name: string; blob: Blob }[], destination: Exp
   ).showDirectoryPicker;
 
   if (picker) {
+    let dir: Awaited<ReturnType<typeof picker>> | null = null;
     try {
-      const dir = await picker.call(window, { mode: "readwrite", id: "layercut-export", startIn: "downloads" });
+      // Only opening the picker may fall back to ZIP. A failure while WRITING
+      // must surface as a failed export — silently zipping instead would
+      // report success while the chosen folder keeps half-written files.
+      dir = await picker.call(window, { mode: "readwrite", id: "layercut-export", startIn: "downloads" });
+    } catch (e) {
+      if ((e as { name?: string } | null)?.name === "AbortError") return "cancelled";
+      console.warn("Folder picker failed, falling back to ZIP", e);
+    }
+    if (dir) {
       await saveViaFolder(dir, files);
       return "folder";
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return "cancelled";
-      console.warn("Folder picker failed, falling back to ZIP", e);
     }
   }
   await saveZip(files);

@@ -10,6 +10,10 @@ export type { Dict };
 const dicts: Record<Lang, Dict> = { zh, en };
 const STORAGE_KEY = "layercut.lang";
 
+// current language, mirrored outside React so non-component modules
+// (e.g. import notices) can localize without hooks
+let currentLang: Lang = "zh";
+
 function detectLang(): Lang {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -30,6 +34,7 @@ const I18nContext = createContext<I18nValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(detectLang);
+  currentLang = lang;
 
   const setLang = useCallback((next: Lang) => {
     setLangState(next);
@@ -50,4 +55,9 @@ export function useI18n(): I18nValue {
   const ctx = useContext(I18nContext);
   if (!ctx) throw new Error("useI18n must be used inside I18nProvider");
   return ctx;
+}
+
+/** Translate outside React components (store/module code). */
+export function getT(): (key: keyof Dict) => string {
+  return (key) => dicts[currentLang][key] ?? String(key);
 }

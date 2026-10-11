@@ -22,7 +22,7 @@ function harness(picker, layers = []) {
   class Zip { file() {} async generateAsync() { return new Blob(['zip-data']); } }
   const deps = {
     jszip: Zip,
-    '../assets/assetStore': { useAssetStore: { getState: () => ({ assets: {} }) } },
+    '../assets/assetStore': { useAssetStore: { getState: () => ({ assets: { a: { kind: 'svg' } } }) } },
     '../layers/layerStore': { useEditorStore: { getState: () => ({ canvas: {}, layers, selectedIds: [] }) } },
     '../layers/layerUtils': {
       validSelection: () => [],
@@ -32,6 +32,7 @@ function harness(picker, layers = []) {
       canvasToBlob: async () => blob,
       rasterizeComposite: () => ({}),
       exportableLayers: ls => ls.map((layer, index) => ({ layer, index })).filter(({ layer }) => layer.visible),
+      downloadBlob: () => document.createElement('a').click(),
     },
     './naming': {
       COMPOSITE_NAME_KEY: 'composite',
@@ -44,6 +45,7 @@ function harness(picker, layers = []) {
       resolveFileNames: (bases, ext) => bases.map(base => `${base}.${ext}`),
     },
     '../vector/svgSafety': { analyzeSvgSafety: () => ({ safe: true }) },
+    '../occlusion/OcclusionEngine': { computeOcclusion: () => ({ byLayerId: new Map() }) },
     '../vector/svgBoolean': {
       // Gate tests only care about reaching the vector engine, not its result.
       computeVectorOcclusion: ls => ({ byLayerId: new Map(ls.map(l => [l.id, '<svg/>'])) }),
@@ -99,7 +101,7 @@ async function main() {
     ['a hidden empty layer does not veto SVG export', async () => {
       const layers = [
         { id: 'empty', type: 'empty', assetId: null, visible: false, occludesWhenHidden: true },
-        { id: 'svg1', type: 'svg', assetId: null, visible: true, occludesWhenHidden: false },
+        { id: 'svg1', type: 'svg', assetId: 'a', visible: true, occludesWhenHidden: false },
       ];
       const h = harness(undefined, layers);
       try { assert.equal(await h.exportSvg('zip'), 'zip'); assert.equal(h.counts().downloads, 1); }
@@ -108,7 +110,7 @@ async function main() {
     ['a hidden non-empty PNG occluder still vetoes SVG export', async () => {
       const layers = [
         { id: 'png', type: 'png', assetId: null, visible: false, occludesWhenHidden: true },
-        { id: 'svg1', type: 'svg', assetId: null, visible: true, occludesWhenHidden: false },
+        { id: 'svg1', type: 'svg', assetId: 'a', visible: true, occludesWhenHidden: false },
       ];
       const h = harness(undefined, layers);
       try { await assert.rejects(h.exportSvg('zip'), { message: 'svg_needs_all_svg' }); }

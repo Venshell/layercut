@@ -73,20 +73,24 @@ function layerOf(id: string, name: string, visible = true): Layer {
 
 function planTests() {
   const layers = [layerOf("a", "background"), layerOf("b", "logo", false), layerOf("c", "logo")];
+  // the plan filters entries that cannot produce an output file, so it needs
+  // the asset map (contents are irrelevant to naming, presence is not)
+  const assets = { asset: { kind: "svg" } as unknown as LayerAsset };
 
-  const all = planExportFiles({ layers, selectedIds: [], scope: "all", ext: "png" });
+  const all = planExportFiles({ assets, layers, selectedIds: [], scope: "all", ext: "png" });
   eq(all.length, 2, "hidden layers are not planned");
   eqList(all.map((f) => f.fileName), ["001_background.png", "003_logo.png"], "default names keep the layer stack index");
   eqList(all.map((f) => f.key), ["a", "c"], "plan is in stack order");
 
-  const selected = planExportFiles({ layers, selectedIds: ["c"], scope: "selected", ext: "png" });
+  const selected = planExportFiles({ assets, layers, selectedIds: ["c"], scope: "selected", ext: "png" });
   eqList(selected.map((f) => f.fileName), ["003_logo.png"], "selection narrows the plan");
 
-  const picked = planExportFiles({ layers, selectedIds: ["a"], scope: "current", ext: "png" });
+  const picked = planExportFiles({ assets, layers, selectedIds: ["a"], scope: "current", ext: "png" });
   eqList(picked.map((f) => f.fileName), ["001_background.png"], "current scope uses the selected layer");
 
   // renaming: identical user input must be disambiguated
   const renamed = planExportFiles({
+    assets,
     layers,
     selectedIds: [],
     scope: "all",
@@ -97,6 +101,7 @@ function planTests() {
   eqList(renamed.map((f) => f.base), ["art", "art"], "the editable base stays what the user typed");
 
   const partial = planExportFiles({
+    assets,
     layers,
     selectedIds: [],
     scope: "all",
@@ -105,23 +110,23 @@ function planTests() {
   });
   eqList(partial.map((f) => f.fileName), ["001_background.svg", "icon.svg"], "renaming only affects the edited file");
   eqList(
-    planExportFiles({ layers, selectedIds: [], scope: "all", ext: "png", overrides: { a: "   " } }).map((f) => f.fileName),
+    planExportFiles({ assets, layers, selectedIds: [], scope: "all", ext: "png", overrides: { a: "   " } }).map((f) => f.fileName),
     ["001_background.png", "003_logo.png"],
     "a blank rename falls back to the default"
   );
 
-  const composite = planExportFiles({ layers, selectedIds: [], scope: "composite", ext: "png" });
+  const composite = planExportFiles({ assets, layers, selectedIds: [], scope: "composite", ext: "png" });
   eq(composite.length, 1, "the composite is one file");
   eq(composite[0].key, COMPOSITE_NAME_KEY, "the composite plan uses the composite key");
   eq(composite[0].fileName, "layercut_composite.png", "composite default name");
   eq(
-    planExportFiles({ layers, selectedIds: [], scope: "composite", ext: "png", overrides: { [COMPOSITE_NAME_KEY]: "final art" } })[0].fileName,
+    planExportFiles({ assets, layers, selectedIds: [], scope: "composite", ext: "png", overrides: { [COMPOSITE_NAME_KEY]: "final art" } })[0].fileName,
     "final art.png",
     "the composite can be renamed"
   );
 
   // the name the user sees is the user's text plus the resolved file name
-  const messy = planExportFiles({ layers, selectedIds: [], scope: "all", ext: "png", overrides: { a: "a/b" } });
+  const messy = planExportFiles({ assets, layers, selectedIds: [], scope: "all", ext: "png", overrides: { a: "a/b" } });
   eq(messy[0].base, "a/b", "the raw base is reported back for the input field");
   eq(messy[0].fileName, "a_b.png", "the resolved name is sanitized");
 }
@@ -168,6 +173,7 @@ async function writerTests() {
   // --- renames reach the writer, and duplicates get a counter
   const overrides = { a: "art", c: "art" };
   const planned = planExportFiles({
+    assets: useAssetStore.getState().assets,
     layers: useEditorStore.getState().layers,
     selectedIds: [],
     scope: "all",

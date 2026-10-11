@@ -45,7 +45,6 @@ export async function createShapeLayer(opts: CreateShapeOptions): Promise<Layer>
     naturalHeight: geometry.height,
     bitmap,
     svgText: geometry.svg,
-    svgUrl: bitmap.src,
     previewUrl: bitmap.src,
   };
   useAssetStore.getState().put(asset);

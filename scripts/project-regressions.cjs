@@ -40,7 +40,7 @@ function saveHarness(serializeProject = types.serializeProject, native = {}) {
     '@tauri-apps/plugin-dialog': { save: async () => native.path ?? null },
     '@tauri-apps/plugin-fs': { writeTextFile: async (path, json) => { if (native.writeError) throw native.writeError; written.push({ path, json }); } },
     '../import/importPNG': {}, '../import/importSVG': {},
-    '../assets/assetStore': { useAssetStore: { getState: () => ({ assets: {} }) } },
+    '../assets/assetStore': { useAssetStore: { getState: () => ({ assets: {} }) }, releaseAssetsExcept: () => {} },
     '../layers/layerStore': { useEditorStore: { getState: () => state } },
     '../editor/ViewportManager': { useViewportStore: { getState: () => ({ fit() {} }) } },
     '../layers/layerUtils': { sanitizeFileName: name => name },

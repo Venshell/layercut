@@ -169,6 +169,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// ---------------------------------------------------------------------------
+// Migration
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-version upgrade steps toward the current format. When v2 lands, add
+ * `MIGRATIONS[1] = (v1) => ({ ...v1, version: 2, ... })` — loading walks the
+ * chain until the document is current, so old projects keep opening.
+ */
+const MIGRATIONS: Partial<Record<number, (doc: Record<string, unknown>) => Record<string, unknown>>> = {};
+
+/**
+ * Bring a parsed project document to the current version. Returns null for
+ * documents this build cannot understand (newer version, broken version
+ * field, or a migration step missing).
+ */
+export function migrateProject(value: Record<string, unknown>): SerializedProject | null {
+  let doc = value;
+  let version = doc.version;
+  if (typeof version !== "number" || !Number.isInteger(version)) return null;
+  if (version > PROJECT_VERSION) return null; // written by a newer build
+  while (version < PROJECT_VERSION) {
+    const migrate = MIGRATIONS[version];
+    if (!migrate) return null;
+    doc = migrate(doc);
+    if (!isRecord(doc)) return null;
+    version = doc.version;
+    if (typeof version !== "number") return null;
+  }
+  return doc as unknown as SerializedProject;
+}
+
 function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }

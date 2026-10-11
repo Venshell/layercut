@@ -20,7 +20,8 @@ export interface OcclusionResult {
  *   Layer[i]_visible = Layer[i] − Union(alpha of all visible layers above i)
  *
  * One top-down sweep produces every layer's result AND the cumulative occluder
- * mask, so preview and batch export share a single computation (§15 cache):
+ * mask. Preview and batch export share the same algorithm (and its call
+ * pattern), but each caller runs its own sweep — there is no cross-call cache:
  *
  *   walking i from top to bottom:
  *     result[i]  = raster[i] ⊖ maskAbove

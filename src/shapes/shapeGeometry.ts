@@ -11,9 +11,9 @@ import {
   CLICK_SHAPE_SIZE,
   MIN_DRAG_SIZE,
   MIN_SHAPE_SIZE,
-  SIDES_MAX,
   SIDES_MIN,
   STAR_INNER_RATIO,
+  clampSides,
   type Drag,
   type Point,
   type ShapeKind,
@@ -65,11 +65,6 @@ function fmtNum(value: number): string {
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 
-function clampSides(sides: number | undefined): number {
-  if (!Number.isFinite(sides)) return SIDES_MIN;
-  return Math.min(SIDES_MAX, Math.max(SIDES_MIN, Math.round(sides as number)));
-}
-
 function moveTo(points: Point[], close: boolean): string {
   const [first, ...rest] = points;
   const parts = [`M ${fmtNum(first.x)},${fmtNum(first.y)}`];
@@ -82,7 +77,7 @@ function moveTo(points: Point[], close: boolean): string {
  * Vertices of a regular polygon inscribed in the box around (cx, cy).
  * `innerRatio` turns it into a star (alternating outer/inner vertices).
  */
-export function polygonPoints(
+function polygonPoints(
   cx: number,
   cy: number,
   rx: number,

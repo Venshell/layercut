@@ -12,7 +12,10 @@ export type PanelSide = "left" | "right";
 interface UIState {
   leftPanel: PanelState;
   rightPanel: PanelState;
+  /** how many modal dialogs are open — global editor shortcuts yield to them */
+  openDialogs: number;
   setPanel: (side: PanelSide, partial: Partial<PanelState>) => void;
+  setDialogOpen: (open: boolean) => void;
 }
 
 export const PANEL_MIN = 190;
@@ -55,6 +58,7 @@ function load(): { leftPanel: PanelState; rightPanel: PanelState } {
 
 export const useUIStore = create<UIState>((set, get) => ({
   ...load(),
+  openDialogs: 0,
   setPanel: (side, partial) => {
     const key = keyOf[side];
     const next = { ...get()[key], ...partial };
@@ -69,4 +73,6 @@ export const useUIStore = create<UIState>((set, get) => ({
       /* ignore */
     }
   },
+  setDialogOpen: (open) =>
+    set((s) => ({ openDialogs: Math.max(0, s.openDialogs + (open ? 1 : -1)) })),
 }));

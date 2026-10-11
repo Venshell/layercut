@@ -4,6 +4,7 @@ import { useEditorStore } from "../layers/layerStore";
 import { useAssetStore } from "../assets/assetStore";
 import { validSelection } from "../layers/layerUtils";
 import {
+  checkSvgExportGate,
   exportLayers,
   planExportFiles,
   type ExportDestination,
@@ -11,10 +12,9 @@ import {
   type ExportScope,
 } from "../export/exportAll";
 import type { FileNameOverrides } from "../export/naming";
-import { analyzeSvgSafety } from "../vector/svgSafety";
 import { readExportConfig, writeExportConfig, type StoredExportConfig } from "../project/exportConfig";
 import { TextField } from "./controls";
-import { isLayerOccluder } from "../layers/layerUtils";
+import { Dialog } from "./Dialog";
 
 const SCALES = [1, 2, 4];
 
@@ -27,24 +27,22 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
   const visibleCount = layers.filter((l) => l.visible).length;
 
-  // SVG availability (§7.3): every visible layer must be a vector-safe SVG
+  // SVG availability (§7.3) — the exact gate the writer applies, evaluated
+  // once per document change instead of on every keystroke.
+  const saved = useMemo(() => readExportConfig() as StoredExportConfig | undefined, []);
   const svgStatus = useMemo(() => {
-    const visible = layers.filter((l) => l.visible);
-    if (visible.length === 0) return { ok: false, reason: t("needLayers") };
-    if (layers.some((l) => isLayerOccluder(l) && l.type !== "svg")) return { ok: false, reason: t("svgOnlyAllSvg") };
-    for (const l of layers.filter(isLayerOccluder)) {
-      const asset = l.assetId ? assets[l.assetId] : null;
-      if (asset?.kind === "svg" && asset.svgText) {
-        const safety = analyzeSvgSafety(asset.svgText);
-        if (!safety.safe) {
-          return { ok: false, reason: `${t("svgUnsafe")}: ${safety.offending.join(", ")}` };
-        }
-      }
-    }
-    return { ok: true, reason: "" };
-  }, [layers, assets, t]);
+    if (visibleCount === 0) return { ok: false, reason: t("needLayers") };
+    const gate = checkSvgExportGate(layers, assets);
+    if (gate.ok) return { ok: true, reason: "" };
+    const reason =
+      gate.code === "svg_needs_all_svg"
+        ? t("svgOnlyAllSvg")
+        : gate.code === "svg_partial_opacity"
+          ? t("svgPartialOpacity")
+          : `${t("svgUnsafe")}: ${gate.offending?.join(", ") ?? ""}`;
+    return { ok: false, reason };
+  }, [layers, assets, visibleCount, t]);
 
-  const saved = readExportConfig() as StoredExportConfig | undefined;
   const selectionDefault: ExportScope =
     selectedIds.length === 1 ? "current" : selectedIds.length > 1 ? "selected" : "all";
   const initialScope: ExportScope =
@@ -65,7 +63,11 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const folderAvailable = "showDirectoryPicker" in window && typeof window.showDirectoryPicker === "function";
   const [destination, setDestination] = useState<ExportDestination>(folderAvailable ? "folder" : "zip");
 
-  const effectiveScale = scale === 0 ? Math.min(8, Math.max(0.1, Number(customScale) || 1)) : scale;
+  // an empty or unparsable input falls back to 1x; 0 clamps to the 0.1 minimum
+  const parsedScale = Number(customScale);
+  const effectiveScale = scale === 0
+    ? Math.min(8, Math.max(0.1, Number.isFinite(parsedScale) ? parsedScale : 1))
+    : scale;
   const ext = format === "svg" ? "svg" : "png";
   const svgDisabled = format === "svg" && (!svgStatus.ok || scope === "composite");
 
@@ -73,8 +75,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   // scope/format changes, so switching format only swaps the extension.
   const [overrides, setOverrides] = useState<FileNameOverrides>({});
   const plan = useMemo(
-    () => planExportFiles({ layers, selectedIds, scope, ext, overrides }),
-    [layers, selectedIds, scope, ext, overrides]
+    () => planExportFiles({ layers, selectedIds, scope, ext, assets, overrides }),
+    [layers, selectedIds, scope, ext, assets, overrides]
   );
   const renamed = Object.keys(overrides).length > 0;
 
@@ -105,9 +107,13 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       }
     } catch (e) {
       console.error(e);
-      if (e instanceof Error && e.message === "svg_needs_all_svg") setProgress(t("svgOnlyAllSvg"));
-      else if (e instanceof Error && (e.message === "svg_unsafe" || e.message === "svg_composite_unsupported"))
-        setProgress(t("svgCompositeUnavailable"));
+      const err = e as Error & { code?: string; offending?: string[] };
+      const code = err.code ?? err.message;
+      if (code === "svg_needs_all_svg") setProgress(t("svgOnlyAllSvg"));
+      else if (code === "svg_partial_opacity") setProgress(t("svgPartialOpacity"));
+      else if (code === "svg_unsafe") setProgress(`${t("svgUnsafe")}: ${err.offending?.join(", ") ?? ""}`);
+      else if (code === "svg_composite_unsupported") setProgress(t("svgCompositeUnavailable"));
+      else if (code === "export_layer_missing") setProgress(`${t("exportFailed")} (export_layer_missing)`);
       else setProgress(`⚠ ${t("exportFailed")}`);
     } finally {
       setBusy(false);
@@ -118,11 +124,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     scope === "composite" ? visibleCount > 0 && format === "png" : plan.length > 0 && !svgDisabled;
 
   return (
-    <div className="dialog-overlay" onMouseDown={onClose}>
-      <div className="dialog" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>{t("exportTitle")}</h2>
-
-        <div className="field-label">{t("exportDestination")}</div>
+    <Dialog title={t("exportTitle")} onClose={onClose}>
+      <div className="field-label">{t("exportDestination")}</div>
         <div className="scale-row">
           <button className={`preset${destination === "folder" ? " active" : ""}`}
             disabled={busy || !folderAvailable} onClick={() => setDestination("folder")}>
@@ -261,7 +264,6 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             {t("exportBtn")}
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

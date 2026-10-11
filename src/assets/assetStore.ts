@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { uid } from "../utils/id";
+import { releasePaintedVariants } from "../vector/svgPaint";
 
 /**
  * Immutable source material of a layer (project plan §9 "Source Data").
@@ -18,8 +19,6 @@ export interface LayerAsset {
   sourceBlob?: Blob;
   /** SVG text, kept for Phase 2 vector boolean + re-rasterization */
   svgText?: string;
-  /** blob URL for the SVG source (also used as panel thumbnail) */
-  svgUrl?: string;
   /** object URL of the original file for thumbnails */
   previewUrl: string;
 }
@@ -43,11 +42,23 @@ export const useAssetStore = create<AssetStore>((set) => ({
     }),
 }));
 
-export function getAsset(assets: Record<string, LayerAsset>, id: string | null): LayerAsset | null {
-  if (!id) return null;
-  return assets[id] ?? null;
-}
-
 export function newAssetId(): string {
   return uid("asset");
+}
+
+/**
+ * Release every asset NOT in `keep` (document replacement): decoded bitmaps
+ * are closed, blob URLs revoked and painted-variant caches evicted. Only
+ * valid right after a document swap — the new document's history contains no
+ * reference to the released assets.
+ */
+export function releaseAssetsExcept(keep: ReadonlySet<string>): void {
+  const { assets, remove } = useAssetStore.getState();
+  for (const [id, asset] of Object.entries(assets)) {
+    if (keep.has(id)) continue;
+    remove(id);
+    if (asset.bitmap instanceof ImageBitmap) asset.bitmap.close();
+    if (asset.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(asset.previewUrl);
+    releasePaintedVariants(id);
+  }
 }
