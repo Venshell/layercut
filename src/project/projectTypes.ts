@@ -47,9 +47,36 @@ export function embeddedAssetBlob(dataUrl: string, mimeType: string): Blob {
 // Serialize: store state → SerializedProject
 // Asset data URLs are cached per asset id — assets are immutable, so repeated
 // autosaves don't re-encode the same bitmaps.
+//
+// The cache holds base64 payloads (~1.33x the raw bytes), so it is bounded and
+// explicitly evictable: without that, opening project after project kept every
+// previous document's material resident for the rest of the session.
 // ---------------------------------------------------------------------------
 
+const MAX_CACHED_ASSETS = 64;
 const assetDataCache = new Map<string, SerializedAsset>();
+
+function cacheAsset(id: string, serialized: SerializedAsset): void {
+  // refresh insertion order so the map behaves as an LRU
+  assetDataCache.delete(id);
+  assetDataCache.set(id, serialized);
+  while (assetDataCache.size > MAX_CACHED_ASSETS) {
+    const oldest = assetDataCache.keys().next().value;
+    if (oldest === undefined) break;
+    assetDataCache.delete(oldest);
+  }
+}
+
+/**
+ * Drop cached data URLs whose asset is not in `keep` (document replacement).
+ * Paired with releaseAssetsExcept so the promise that replacing a document
+ * frees its material holds for the serialization cache too.
+ */
+export function releaseSerializedAssets(keep: ReadonlySet<string>): void {
+  for (const id of [...assetDataCache.keys()]) {
+    if (!keep.has(id)) assetDataCache.delete(id);
+  }
+}
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer();
@@ -108,7 +135,7 @@ export async function serializeProject(
       kind: asset.kind,
       data: dataUrl,
     };
-    assetDataCache.set(layer.assetId, serialized);
+    cacheAsset(layer.assetId, serialized);
     out[layer.assetId] = serialized;
   }
   return {

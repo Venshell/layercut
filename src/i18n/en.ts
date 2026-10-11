@@ -15,7 +15,6 @@ export const en: Dict = {
   // Panels
   layers: "Layers",
   properties: "Properties",
-  noSelection: "No layer selected",
   noSelectionHint: "Click a layer on the canvas or in the Layers panel to see its properties",
   canvasSettings: "Canvas",
 
@@ -54,6 +53,7 @@ export const en: Dict = {
   resetTransform: "Reset Transform",
   layersSelected: "layer(s) selected",
   opacityOfSelection: "Uniform opacity",
+  opacityMixed: "Selected layers differ; dragging sets them all to one value",
 
   // Shape drawing tools
   toolSelect: "Select",
@@ -130,7 +130,6 @@ export const en: Dict = {
   saveProject: "Save Project",
   openProject: "Open Project",
   recentProjects: "Recent Projects",
-  console: "Project Console",
   createNew: "New",
   openFromDisk: "Open from disk",
   saveTitle: "Save Project",
@@ -149,11 +148,11 @@ export const en: Dict = {
 
   // Misc
   importFailed: "Import failed",
+  paintFailed: "Asset failed to decode, this layer cannot be shown",
   language: "Language",
   togglePanel: "Drag to resize · double-click to collapse / expand",
   backToConsole: "Back to project console",
   homeSubtitle: "Non-destructive layer occlusion · layered export",
   createProject: "Create project",
-  canvasSize: "Canvas",
   noAutosaveNote: "Replaces the current editor content and cannot be undone",
 };

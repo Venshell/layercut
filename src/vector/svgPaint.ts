@@ -12,7 +12,18 @@ function paintValue(el: Element, property: "fill" | "stroke", inherited: string)
   return style?.getPropertyValue(property).trim() || (el.getAttribute(property) || "").trim() || inherited;
 }
 
-/** Build one layer's effective SVG without changing the imported source. */
+/**
+ * Build one layer's effective SVG without changing the imported source.
+ *
+ * Overrides are written as inline `style` declarations with `!important`
+ * rather than as presentation attributes. A presentation attribute loses to
+ * any author CSS rule (`<style>rect{fill:#f00}</style>`), which made the panel
+ * show the new colour while the canvas and exports kept the old one, with no
+ * warning. An inline `!important` declaration wins over author rules including
+ * their own `!important` ones, and Paper.js reads it correctly. Author
+ * `<style>` declarations for anything we do not override (stroke width,
+ * dashes, transforms, ...) are left untouched.
+ */
 export function svgTextForLayer(asset: LayerAsset, layer: Layer): string {
   const source = asset.svgText;
   if (!source || (!layer.svgFillColor && !layer.svgStrokeColor)) return source ?? "";
@@ -23,13 +34,19 @@ export function svgTextForLayer(asset: LayerAsset, layer: Layer): string {
     const stroke = paintValue(el, "stroke", inheritedStroke);
     const tag = el.localName.toLowerCase();
     if (GRAPHICS.has(tag)) {
+      const styled = el as SVGElement;
+      // Both are needed. Paper.js exports SVG from the presentation attribute,
+      // so without setAttribute the vector output keeps the original colour;
+      // the inline !important declaration is what beats author CSS when the
+      // browser rasterizes the document. Writing only one of them regresses
+      // one of the two paths.
       if (layer.svgFillColor && fill.toLowerCase() !== "none") {
-        (el as SVGElement).style.removeProperty("fill");
         el.setAttribute("fill", layer.svgFillColor);
+        styled.style.setProperty("fill", layer.svgFillColor, "important");
       }
       if (layer.svgStrokeColor && stroke.toLowerCase() !== "none") {
-        (el as SVGElement).style.removeProperty("stroke");
         el.setAttribute("stroke", layer.svgStrokeColor);
+        styled.style.setProperty("stroke", layer.svgStrokeColor, "important");
       }
     }
     for (const child of Array.from(el.children)) walk(child, fill, stroke);

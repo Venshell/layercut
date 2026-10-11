@@ -2,7 +2,7 @@ import type { CanvasSettings, Layer } from "../layers/layerTypes";
 import type { LayerAsset } from "../assets/assetStore";
 import { newAssetId, useAssetStore } from "../assets/assetStore";
 import { makeLayer } from "../layers/layerUtils";
-import { loadSVGImage, parseSVGSize } from "../renderer/SVGRenderer";
+import { loadSVGImage, svgSizeOf } from "../renderer/SVGRenderer";
 
 /**
  * Import an SVG file (Phase 1 raster strategy, project plan §6):
@@ -12,7 +12,7 @@ import { loadSVGImage, parseSVGSize } from "../renderer/SVGRenderer";
 export async function importSVGFile(file: File): Promise<{ asset: LayerAsset }> {
   const svgText = await file.text();
   const img = await loadSVGImage(svgText);
-  const size = parseSVGSize(svgText);
+  const size = svgSizeOf(img, svgText);
   const asset: LayerAsset = {
     id: newAssetId(),
     kind: "svg",

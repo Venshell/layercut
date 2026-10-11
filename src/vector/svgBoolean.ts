@@ -26,6 +26,18 @@ function partialOpacityError(): Error & { code: string } {
   return err;
 }
 
+/**
+ * A correctly sized but empty document. Used wherever a layer is part of the
+ * export plan but has nothing to draw: zero opacity, unimportable geometry, or
+ * no painted geometry at all. An empty file is the honest representation —
+ * the raster path writes a blank PNG for the same inputs — and it keeps the
+ * "plan == written files" contract that exportAll relies on.
+ */
+function emptySvg(canvas: CanvasSettings, scale: number): string {
+  const P = getPaper();
+  return exportVisibleSvg(new P.Group({ insert: false }), canvas, scale);
+}
+
 function exportVisibleSvg(item: paper.Item, canvas: CanvasSettings, scale: number): string {
   const P = getPaper();
   resetProject();
@@ -82,14 +94,19 @@ export function computeVectorOcclusion(
 
     if (layer.opacity <= 0) {
       // invisible everywhere: exports nothing and cuts nothing
-      if (layer.visible) {
-        byLayerId.set(layer.id, exportVisibleSvg(new P.Group({ insert: false }), canvas, scale));
-      }
+      if (layer.visible) byLayerId.set(layer.id, emptySvg(canvas, scale));
       continue;
     }
 
     const normalized = importLayerGeometry(asset, layer);
-    if (!normalized) continue;
+    if (!normalized) {
+      // The plan already lists this layer (visible, has an asset), so it must
+      // still produce a file. Geometry that cannot be imported renders as
+      // nothing, which is what an empty document represents — throwing here
+      // instead aborted the whole batch after some files were written.
+      if (layer.visible) byLayerId.set(layer.id, emptySvg(canvas, scale));
+      continue;
+    }
 
     const { filledGeometry, filledBuckets } = normalized;
     // Boolean subtraction only concerns filled geometry. Keep stroke-only
@@ -111,12 +128,17 @@ export function computeVectorOcclusion(
     }
     children.push(...strokeOnly);
 
-    if (children.length > 0 && layer.visible) {
+    if (layer.visible) {
+      // A layer with no painted geometry (fill="none" and no stroke) is fully
+      // transparent: it still gets an output file, matching the raster path,
+      // which writes a blank PNG for the same input.
       const output =
-        children.length === 1
-          ? children[0]
-          : new P.Group({ children, insert: false });
-      byLayerId.set(layer.id, exportVisibleSvg(output, canvas, scale));
+        children.length === 0
+          ? null
+          : children.length === 1
+            ? children[0]
+            : new P.Group({ children, insert: false });
+      byLayerId.set(layer.id, output ? exportVisibleSvg(output, canvas, scale) : emptySvg(canvas, scale));
     }
     if (filledGeometry) {
       mask = mask ? (mask.unite(filledGeometry) as PaperPathItem) : filledGeometry;

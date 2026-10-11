@@ -26,6 +26,14 @@ export function PropertiesPanel({ width, collapsed }: { width: number; collapsed
   const natural = asset ? { width: asset.naturalWidth, height: asset.naturalHeight } : null;
   const size = single ? getLayerSize(single, natural) : null;
 
+  // Multi-selection opacity: show the shared value, or flag that they differ.
+  // Showing a hard-coded 100% misreported every selection that wasn't fully
+  // opaque, and the first drag then overwrote all of them with that value.
+  const selectedLayers = layers.filter((l) => selectedIds.includes(l.id));
+  const firstOpacity = selectedLayers[0]?.opacity ?? 1;
+  const mixedOpacity = selectedLayers.some((l) => l.opacity !== firstOpacity);
+  const selectionOpacity = Math.round(firstOpacity * 100);
+
   return (
     <div
       className={`panel properties-panel${collapsed ? " panel-collapsed" : ""}`}
@@ -176,13 +184,14 @@ export function PropertiesPanel({ width, collapsed }: { width: number; collapsed
           </div>
           <div className="field-label">{t("opacityOfSelection")}</div>
           <SliderField
-            value={100}
+            value={selectionOpacity}
             min={0}
             max={100}
             onDragStart={() => useEditorStore.getState().beginTransaction()}
             onChange={(v) => useEditorStore.getState().setLayersOpacity(selectedIds, v / 100, false)}
             onCommit={(v) => commitOpacity(selectedIds, v)}
           />
+          {mixedOpacity && <p className="muted small">{t("opacityMixed")}</p>}
         </div>
       )}
 

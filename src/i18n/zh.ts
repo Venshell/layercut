@@ -13,7 +13,6 @@ export const zh = {
   // Panels
   layers: "图层",
   properties: "属性",
-  noSelection: "未选中图层",
   noSelectionHint: "点击画布或图层面板中的图层查看属性",
   canvasSettings: "画布",
 
@@ -52,6 +51,7 @@ export const zh = {
   resetTransform: "重置变换",
   layersSelected: "个图层已选中",
   opacityOfSelection: "统一不透明度",
+  opacityMixed: "所选图层不透明度不一致，拖动将统一为同一值",
 
   // Shape drawing tools
   toolSelect: "选择",
@@ -128,7 +128,6 @@ export const zh = {
   saveProject: "保存工程",
   openProject: "打开工程",
   recentProjects: "最近工程",
-  console: "工程控制台",
   createNew: "新建",
   openFromDisk: "从文件打开",
   saveTitle: "保存工程",
@@ -147,12 +146,12 @@ export const zh = {
 
   // Misc
   importFailed: "导入失败",
+  paintFailed: "素材解码失败，该图层无法显示",
   language: "语言",
   togglePanel: "拖拽调整宽度 · 双击收起 / 展开",
   backToConsole: "返回工程控制台",
   homeSubtitle: "非破坏性多图层遮挡 · 分层导出",
   createProject: "创建工程",
-  canvasSize: "画布",
   noAutosaveNote: "将替换当前编辑器内容，且无法通过撤销找回",
 };
 

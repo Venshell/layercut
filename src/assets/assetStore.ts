@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { uid } from "../utils/id";
 import { releasePaintedVariants } from "../vector/svgPaint";
+import { releaseSerializedAssets } from "../project/projectTypes";
 
 /**
  * Immutable source material of a layer (project plan §9 "Source Data").
@@ -51,6 +52,9 @@ export function newAssetId(): string {
  * are closed, blob URLs revoked and painted-variant caches evicted. Only
  * valid right after a document swap — the new document's history contains no
  * reference to the released assets.
+ *
+ * The serialization cache is evicted here too, so this stays the single place
+ * a caller has to remember: it holds base64 copies of the same material.
  */
 export function releaseAssetsExcept(keep: ReadonlySet<string>): void {
   const { assets, remove } = useAssetStore.getState();
@@ -61,4 +65,5 @@ export function releaseAssetsExcept(keep: ReadonlySet<string>): void {
     if (asset.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(asset.previewUrl);
     releasePaintedVariants(id);
   }
+  releaseSerializedAssets(keep);
 }

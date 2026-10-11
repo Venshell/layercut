@@ -4,8 +4,17 @@
  * geometry. Unsupported elements make "Boolean Result Vector-safe" false.
  *
  * Supported (v0.4 scope): svg, g, defs, path, rect, circle, ellipse,
- * polygon, polyline, line, use, symbol, gradients (paint only).
- * Unsupported: text, image, filter, mask, clipPath, pattern, style, SMIL.
+ * polygon, polyline, line, symbol, gradients (paint only).
+ * Unsupported: use, text, image, filter, mask, clipPath, pattern, style, SMIL.
+ *
+ * `use` is unsupported because Paper's importer resolves it through a
+ * module-level `definitions` registry that is not populated on the
+ * `importSVG(..., { insert: false })` path this pipeline uses, so a <use>
+ * instance imports as an empty Shape. The gate used to accept it, which meant
+ * the vector engine silently dropped the geometry and the export wrote a file
+ * missing that layer's cut. `symbol` stays supported: it only ever appears
+ * inside <defs>, renders nothing on its own, and removing it would reject
+ * documents that are in fact fine.
  */
 
 const SAFE_TAGS = new Set([
@@ -19,7 +28,6 @@ const SAFE_TAGS = new Set([
   "polygon",
   "polyline",
   "line",
-  "use",
   "symbol",
   "title",
   "desc",

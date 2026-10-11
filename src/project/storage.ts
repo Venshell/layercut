@@ -42,6 +42,38 @@ function tx<T>(store: string, mode: IDBTransactionMode, run: (s: IDBObjectStore)
   );
 }
 
+/**
+ * One read-modify-write inside a SINGLE transaction. `work` receives the store
+ * and the current rows, and issues its own requests; the promise settles when
+ * the transaction commits, so a failure rolls the whole edit back instead of
+ * leaving a half-rebuilt store behind.
+ */
+function txUpdate(
+  store: string,
+  work: (s: IDBObjectStore, rows: RecentProject[]) => void
+): Promise<void> {
+  return openDB().then(
+    (db) =>
+      new Promise<void>((resolve, reject) => {
+        const t = db.transaction(store, "readwrite");
+        const objectStore = t.objectStore(store);
+        const read = objectStore.getAll();
+        read.onsuccess = () => {
+          try {
+            work(objectStore, read.result as RecentProject[]);
+          } catch (error) {
+            try { t.abort(); } catch { /* already aborting */ }
+            reject(error);
+          }
+        };
+        read.onerror = () => reject(read.error);
+        t.oncomplete = () => { db.close(); resolve(); };
+        t.onabort = () => { db.close(); reject(t.error ?? new Error("IndexedDB transaction aborted")); };
+        t.onerror = () => { db.close(); reject(t.error); };
+      })
+  );
+}
+
 export interface RecentProject {
   /** ms timestamp — also the primary key */
   id: number;
@@ -89,17 +121,23 @@ export async function clearAutosave(): Promise<void> {
 
 const RECENTS_LIMIT = 5;
 
+/**
+ * Add or refresh one recent project. The read-modify-write runs in a single
+ * transaction: doing it across separate ones let two concurrent saves (or a
+ * save overlapping a delete) both read the old list and then clobber each
+ * other, losing an entry.
+ */
 export async function addRecent(entry: Omit<RecentProject, "id">): Promise<void> {
   try {
     const rec: RecentProject = { ...entry, id: Date.now() };
-    const all = await listRecents();
-    // replace an entry with the same name (re-save), keep newest first
-    const filtered = all.filter((r) => r.name !== rec.name);
-    const next = [rec, ...filtered].slice(0, RECENTS_LIMIT);
-    await tx(STORE_RECENTS, "readwrite", (s) => s.clear());
-    for (const r of next) {
-      await tx(STORE_RECENTS, "readwrite", (s) => s.put(r));
-    }
+    await txUpdate(STORE_RECENTS, (store, rows) => {
+      const all = [...rows].sort((a, b) => b.id - a.id);
+      // replace an entry with the same name (re-save), keep newest first
+      const filtered = all.filter((r) => r.name !== rec.name);
+      const next = [rec, ...filtered].slice(0, RECENTS_LIMIT);
+      store.clear();
+      for (const r of next) store.put(r);
+    });
   } catch (e) {
     console.warn("recents write failed", e);
   }
