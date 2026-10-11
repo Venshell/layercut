@@ -4,14 +4,15 @@
   "version": "0.4.1",
   "type": "module",
   "description": "LayerCut - non-destructive 2D layer occlusion & layered export tool",
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "app:dev": "tauri dev",
     "app:build": "tauri build",
-    "test": "node scripts/export-regressions.cjs && node scripts/project-regressions.cjs && node scripts/project-blob-regressions.cjs && node scripts/history-regressions.cjs"
+    "test": "npm run test:node && node scripts/run-browser-harnesses.cjs",
+    "test:node": "node scripts/export-regressions.cjs && node scripts/project-regressions.cjs && node scripts/project-blob-regressions.cjs && node scripts/history-regressions.cjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",

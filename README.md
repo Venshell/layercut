@@ -27,7 +27,7 @@ Layer[i]_visible = Layer[i] − Union(All Visible Layers Above i)
 - **工程读取的内嵌素材**：`.layercut` 内的 base64 素材直接解码为 Blob；桌面版不通过受 CSP 限制的 `fetch(data:)` 读取。
 - **桌面工程保存**：桌面版弹出系统「另存为」对话框，选定 `.layercut` 路径后写入文件；取消或写入失败不会标记为已保存。Web 版继续使用浏览器下载。
 - **界面布局**：左右面板拖拽调宽（190–460px）、双击或箭头收起 / 展开，布局状态持久化；统一输入控件套件（`src/ui/controls`：文本 / 数字 / 滑杆 / 颜色拾取，焦点光晕、自绘滑杆填充、无原生 spinner），全部输入点共用一套视觉
-- **矢量管线（v0.4–v0.6）**：导出对话框可选 **SVG 矢量** 格式——每层输出 `Layer[i] − Union(上方参与遮挡的图层)` 的真实矢量结果（Paper.js 路径布尔，曲线保留、viewBox 与画布一致、可按倍率缩放）。条件：参与输出或遮挡的图层均为 SVG 且不含暂不支持元素（text / image / filter / mask / clipPath / pattern / style / SMIL 会禁用该选项）；参与遮挡的 PNG 不可用（§7.3）。已知限制：布尔只作用于填充几何，描边保留但不会被遮挡裁切。
+- **矢量管线（v0.4–v0.6）**：导出对话框可选 **SVG 矢量** 格式——每层输出 `Layer[i] − Union(上方参与遮挡的图层)` 的真实矢量结果（Paper.js 路径布尔，曲线保留、viewBox 与画布一致、可按倍率缩放）。条件：参与输出或遮挡的图层均为 SVG 且不含暂不支持元素（**`<use>`** / text / image / filter / mask / clipPath / pattern / style / SMIL 会禁用该选项）；参与遮挡的 PNG 不可用（§7.3）。`<use>` 暂不支持是因为 Paper.js 的导入器在这条调用路径下会把它解析成空图形，此前门禁放行会导致导出结果**静默缺少该层的裁切**，故现在改为明确禁用并提示。已知限制：布尔只作用于填充几何，描边保留但不会被遮挡裁切。
 - **中英双语**界面（右上角切换，记住偏好）
 
 ### 快捷键
@@ -111,18 +111,26 @@ src/
 
 ## 测试素材
 
-导出保存方式回归检查：`node scripts/export-regressions.cjs`，覆盖直接 ZIP、文件夹取消、无文件夹 API、文件写入完成结果，以及隐藏空图层 / 隐藏 PNG 遮挡层对 SVG 导出的门禁。
+**一条命令跑全部回归**：
 
-导出命名回归：打开 `http://localhost:5173/scripts/export-naming-regressions.html`，应显示 `PASS`。覆盖非法字符清理、改名、重名自动 `(1)/(2)`、大小写不敏感冲突、空白改名回退默认、导出计划（范围 / 隐藏层 / 合成图）以及**「预览文件名 == 实际写入文件名」**（PNG / SVG / 合成图三条路径）。
+```bash
+npm test          # 4 个 Node harness + 6 个浏览器 harness
+npm run test:node # 只跑 Node 侧（不需要浏览器）
+```
+
+`npm test` 会自动探测 Edge / Chrome 并起一个临时 dev server 无头执行 6 个浏览器 harness，逐条打印 `PASS/FAIL`。找不到浏览器时跳过（退出码 0），可用 `BROWSER_PATH` 指定路径、`HARNESS_PORT` 换端口。此前这 6 个 harness 只能手开浏览器 URL，实际上没人跑——`<use>` 那个静默错误的缺陷正是活在这个盲区里，所以现在把它们接进了 `npm test`。
 
 `scripts/make-fixtures.mjs` 生成 `fixtures/`（3 张带透明通道的 PNG + 1 个 SVG），可用于手工验收：导入 → 任意变换 → 遮挡预览 → 批量导出 → 将导出图层按原坐标叠放，与普通预览对比。
 
-隐藏遮挡、等比锁定及合并透明孔洞回归：运行 `npm run dev` 后打开 `http://localhost:5173/scripts/layer-visibility-regressions.html`，应显示 `passed` 与 `total` 相等。
+需要单独看某个 harness 时，`npm run dev` 后打开对应 URL：
 
-画布平移回归：打开 `http://localhost:5173/scripts/canvas-pan-regressions.html`，检查右键拖动、中键拖动、普通左键拖动和「图案工具启用时左键拖动」四项均通过。
+- `scripts/export-naming-regressions.html` — 非法字符清理、改名、重名 `(1)/(2)`、大小写不敏感冲突、空白改名回退、导出计划，以及**「预览文件名 == 实际写入文件名」**（PNG / SVG / 合成图）。
+- `scripts/layer-visibility-regressions.html` — 隐藏遮挡、等比锁定、合并透明孔洞。
+- `scripts/canvas-pan-regressions.html` — 右键 / 中键 / 普通左键平移，图案工具期间不平移，以及**空格平移时图层不被拖动**（直接读 Konva 节点的 `draggable`）。
+- `scripts/shape-regressions.html` — 图案绘制几何（含描边外扩、反向拖拽、边数钳制）、拖拽修饰键、栅格与遮挡像素、矢量导出、撤销/重做与工程往返。
+- `scripts/svg-paint-regressions.html` — 改色（填充 / 描边 / none 保持不绘制）、**改色优先于作者 CSS**、两图层各自配色、工程往返、源不变、撤销/重做。
+- `scripts/vector-regressions.html` — viewBox / preserveAspectRatio、不透明度门禁、多色填充、**`<use>` 被门禁拒绝**、**各长度单位下的固有尺寸**。
 
-图案绘制回归：打开 `http://localhost:5173/scripts/shape-regressions.html`，应显示 `PASS`。覆盖纯几何（矩形 / 椭圆 / 直线 / 多边形 / 星形、描边外扩、反向拖拽、边数钳制）、拖拽修饰键、栅格与遮挡像素、Paper.js 矢量导出、工具状态不入历史、撤销/重做与工程往返。
-
-工程保存回归：`node scripts/project-blob-regressions.cjs` 验证桌面 CSP 下的 PNG 原始字节保存；`node scripts/project-regressions.cjs` 验证工程历史、读入校验与自动保存。
+Node 侧：`scripts/export-regressions.cjs`（导出保存方式，含 `svg_partial_opacity` 两条门禁分支）、`scripts/project-regressions.cjs`（工程历史、读入校验、自动保存）、`scripts/project-blob-regressions.cjs`（桌面 CSP 下的 PNG 原始字节保存）、`scripts/history-regressions.cjs`（撤销/重做边界）。
 
 已知构建提示：Vite 对现有约 851 kB 的主包给出 500 kB 分包建议；该提示不影响本轮功能与构建，但主包拆分需独立性能验收。

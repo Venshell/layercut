@@ -7,18 +7,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      // early error trap (visible via console + window.__errs)
-      window.__errs = [];
-      window.addEventListener("error", (e) => {
-        window.__errs.push(String((e.error && e.error.stack) || e.message));
-        console.error(e.error || e.message);
-      });
-      window.addEventListener("unhandledrejection", (e) => {
-        window.__errs.push(String(e.reason));
-        console.error(e.reason);
-      });
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
