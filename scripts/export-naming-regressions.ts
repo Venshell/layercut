@@ -205,6 +205,51 @@ async function writerTests() {
   eq(await exportLayers("all", 1, "png", undefined, "folder"), "folder", "export without overrides");
   eqList(written, ["001_background.png", "002_logo.png"], "default names are unchanged");
 
+  // --- a planned layer whose geometry paints nothing must still be written.
+  // fill="none" with no stroke yields no filled buckets; the vector engine used
+  // to omit it from its result map entirely, so the writer threw
+  // "export_layer_missing" and aborted the whole batch after writing some files.
+  {
+    const invisible = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><rect x="5" y="5" width="30" height="30" fill="none"/></svg>';
+    const invisibleAsset: LayerAsset = {
+      id: "invisible",
+      kind: "svg",
+      fileName: "invisible.svg",
+      mimeType: "image/svg+xml",
+      naturalWidth: 40,
+      naturalHeight: 40,
+      bitmap: await loadSVGImage(invisible),
+      svgText: invisible,
+      previewUrl: "",
+    };
+    useAssetStore.getState().put(invisibleAsset);
+    const invisibleLayer: Layer = { ...layerOf("inv", "invisible"), assetId: "invisible" };
+    const layersWithInvisible = [invisibleLayer];
+
+    const plannedInvisible = planExportFiles({
+      assets: useAssetStore.getState().assets,
+      layers: layersWithInvisible,
+      selectedIds: [],
+      scope: "all",
+      ext: "svg",
+    }).map((f) => f.fileName);
+    eq(plannedInvisible.length, 1, "an invisible-geometry layer is still planned");
+
+    useEditorStore.getState().loadProject({
+      canvas: { width: 60, height: 60, background: "transparent" },
+      layers: layersWithInvisible,
+      name: "invisible test",
+    });
+    written = [];
+    stubFolderPicker();
+    eq(
+      await exportLayers("all", 1, "svg", undefined, "folder"),
+      "folder",
+      "svg export of invisible geometry does not abort the batch"
+    );
+    eqList(written, plannedInvisible, "the preview still equals the written files");
+  }
+
   // --- a scope with nothing to export is still reported as cancelled
   eq(await exportLayers("selected", 1, "png", undefined, "folder"), "cancelled", "empty selection cancels");
 }

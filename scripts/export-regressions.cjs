@@ -5,7 +5,7 @@ const ts = require('typescript');
 const { execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 
-function harness(picker, layers = []) {
+function harness(picker, layers = [], assets = { a: { kind: 'svg' } }) {
   let pickerCalls = 0, downloads = 0;
   global.window = picker ? { showDirectoryPicker: async function (options) {
     pickerCalls++;
@@ -22,7 +22,7 @@ function harness(picker, layers = []) {
   class Zip { file() {} async generateAsync() { return new Blob(['zip-data']); } }
   const deps = {
     jszip: Zip,
-    '../assets/assetStore': { useAssetStore: { getState: () => ({ assets: { a: { kind: 'svg' } } }) } },
+    '../assets/assetStore': { useAssetStore: { getState: () => ({ assets }) } },
     '../layers/layerStore': { useEditorStore: { getState: () => ({ canvas: {}, layers, selectedIds: [] }) } },
     '../layers/layerUtils': {
       validSelection: () => [],
@@ -44,7 +44,13 @@ function harness(picker, layers = []) {
       // real dedupe/rename rules are covered by scripts/export-naming-regressions.html.
       resolveFileNames: (bases, ext) => bases.map(base => `${base}.${ext}`),
     },
-    '../vector/svgSafety': { analyzeSvgSafety: () => ({ safe: true }) },
+    // Both exports the real module imports must exist here. Missing
+    // svgHasPartialAlpha used to make the opacity gate unreachable — and then
+    // crash with a TypeError the moment a case supplied svgText.
+    '../vector/svgSafety': {
+      analyzeSvgSafety: () => ({ safe: true }),
+      svgHasPartialAlpha: svgText => /\b(?:fill|stroke)?opacity\s*[:=]\s*["']?0?\.\d/.test(String(svgText ?? '')),
+    },
     '../occlusion/OcclusionEngine': { computeOcclusion: () => ({ byLayerId: new Map() }) },
     '../vector/svgBoolean': {
       // Gate tests only care about reaching the vector engine, not its result.
@@ -114,6 +120,29 @@ async function main() {
       ];
       const h = harness(undefined, layers);
       try { await assert.rejects(h.exportSvg('zip'), { message: 'svg_needs_all_svg' }); }
+      finally { h.dispose(); }
+    }],
+    // The opacity gate was unreachable before: the asset had no svgText and the
+    // layers carried no opacity, so both of its branches short-circuited.
+    ['a partially transparent SVG source vetoes SVG export', async () => {
+      const layers = [{ id: 'svg1', type: 'svg', assetId: 'a', visible: true, occludesWhenHidden: false, opacity: 1 }];
+      const assets = { a: { kind: 'svg', svgText: '<svg><rect fill-opacity="0.5"/></svg>' } };
+      const h = harness(undefined, layers, assets);
+      try { await assert.rejects(h.exportSvg('zip'), { message: 'svg_partial_opacity' }); }
+      finally { h.dispose(); }
+    }],
+    ['a partially transparent layer opacity vetoes SVG export', async () => {
+      const layers = [{ id: 'svg1', type: 'svg', assetId: 'a', visible: true, occludesWhenHidden: false, opacity: 0.5 }];
+      const assets = { a: { kind: 'svg', svgText: '<svg><rect fill="#ff0000"/></svg>' } };
+      const h = harness(undefined, layers, assets);
+      try { await assert.rejects(h.exportSvg('zip'), { message: 'svg_partial_opacity' }); }
+      finally { h.dispose(); }
+    }],
+    ['a fully opaque SVG source still exports', async () => {
+      const layers = [{ id: 'svg1', type: 'svg', assetId: 'a', visible: true, occludesWhenHidden: false, opacity: 1 }];
+      const assets = { a: { kind: 'svg', svgText: '<svg><rect fill="#ff0000"/></svg>' } };
+      const h = harness(undefined, layers, assets);
+      try { assert.equal(await h.exportSvg('zip'), 'zip'); assert.equal(h.counts().downloads, 1); }
       finally { h.dispose(); }
     }],
   ];

@@ -56,6 +56,53 @@ async function main() {
   assert(useEditorStore.getState().layers[0].svgFillColor === "#adcf37", "undo missing");
   store.redo();
   assert(useEditorStore.getState().layers[0].svgFillColor === "#1c4a9c", "redo missing");
-  document.getElementById("result")!.textContent = "PASS: fill, stroke, none, vector, two layer colors, project roundtrip, immutable source, undo/redo";
+  await authorCssPrecedence();
+  document.getElementById("result")!.textContent = "PASS: fill, stroke, none, vector, two layer colors, project roundtrip, immutable source, undo/redo, author CSS precedence";
+}
+
+/**
+ * A recolour must beat author CSS. Writing a presentation attribute lost to
+ * any `<style>` rule, so the panel showed the new colour while the canvas and
+ * exports kept the old one. The override is now an inline !important
+ * declaration, which wins even against an author !important rule.
+ */
+async function authorCssPrecedence() {
+  const wrap = (body: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">${body}</svg>`;
+  const forLayer = (svgText: string): LayerAsset => ({
+    id: "css-source", kind: "svg", fileName: "css.svg", mimeType: "image/svg+xml",
+    naturalWidth: 40, naturalHeight: 40, bitmap: null as never, previewUrl: "", svgText,
+  });
+  const paintLayer: Layer = {
+    ...layer, id: "css-layer", assetId: "css-source",
+    svgFillColor: "#00ff00", svgStrokeColor: null,
+    transform: { x: 20, y: 20, scaleX: 1, scaleY: 1, rotation: 0 },
+  };
+  const centrePixel = async (svgText: string) => {
+    const painted = svgTextForLayer(forLayer(svgText), paintLayer);
+    return pixels(await imageFromSvg(painted))(20, 20);
+  };
+
+  const cases: [string, string][] = [
+    ["presentation attribute", '<rect width="40" height="40" fill="#ff0000"/>'],
+    ["inline style", '<rect width="40" height="40" style="fill:#ff0000"/>'],
+    ["author CSS rule", '<style>rect{fill:#ff0000}</style><rect width="40" height="40"/>'],
+    ["author CSS !important", '<style>rect{fill:#ff0000 !important}</style><rect width="40" height="40"/>'],
+  ];
+  for (const [label, body] of cases) {
+    const px = await centrePixel(wrap(body));
+    assert(px[1] > 200 && px[0] < 80, `${label}: override did not win (pixel ${px})`);
+  }
+
+  // An unpainted channel must stay unpainted.
+  const noneText = svgTextForLayer(forLayer(wrap('<rect width="40" height="40" fill="none"/>')), paintLayer);
+  assert(!noneText.includes("#00ff00"), "fill=none was painted by the override");
+
+  // Declarations we do not override must survive.
+  const withStroke = svgTextForLayer(
+    forLayer(wrap('<style>rect{fill:#ff0000;stroke-width:6}</style><rect x="5" y="5" width="30" height="30"/>')),
+    paintLayer
+  );
+  assert(withStroke.includes("stroke-width"), "author stroke-width was dropped");
 }
 main().catch((error) => { document.getElementById("result")!.textContent = `FAIL: ${error}`; });
