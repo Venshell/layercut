@@ -1,5 +1,4 @@
 import type { Layer } from "./layerTypes";
-import type { LayerAsset } from "../assets/assetStore";
 import { uid } from "../utils/id";
 import type { CanvasSettings } from "./layerTypes";
 
@@ -15,11 +14,6 @@ export function findLayer(layers: Layer[], id: string): Layer | undefined {
 
 export function isLayerOccluder(layer: Layer): boolean {
   return layer.visible || layer.occludesWhenHidden === true;
-}
-
-export function layerNaturalSize(asset: LayerAsset | null): { width: number; height: number } | null {
-  if (!asset) return null;
-  return { width: asset.naturalWidth, height: asset.naturalHeight };
 }
 
 /** Center a new layer on the canvas, scaled down if larger than the canvas. */
@@ -62,16 +56,20 @@ export function makeLayer(opts: {
   };
 }
 
-export function duplicateLayer(layer: Layer, layers: Layer[]): Layer {
+/**
+ * Duplicate one layer with a name unique against `takenNames` (every name in
+ * the stack; the caller keeps the set across multiple copies so one action
+ * cannot produce two identical names). The chosen name is added to the set.
+ */
+export function duplicateLayer(layer: Layer, takenNames: Set<string>): Layer {
   const base = layer.name.replace(/ copy( \d+)?$/, "");
   let suffixIndex = 1;
   let name = `${base} copy`;
-  // ensure unique name
-  const names = new Set(layers.map((l) => l.name));
-  while (names.has(name)) {
+  while (takenNames.has(name)) {
     suffixIndex += 1;
     name = `${base} copy ${suffixIndex}`;
   }
+  takenNames.add(name);
   // offset slightly so the copy is visible
   return {
     ...layer,
@@ -81,11 +79,17 @@ export function duplicateLayer(layer: Layer, layers: Layer[]): Layer {
   };
 }
 
+// Windows reserves these device names with or without an extension.
+const RESERVED_FILE_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
 export function sanitizeFileName(name: string): string {
   const cleaned = name
     .trim()
     .replace(/[\\/:*?"<>|]/g, "_")
     .replace(/\s+/g, " ")
-    .slice(0, 60);
+    .slice(0, 60)
+    // trailing dots/spaces are silently stripped by Windows; do it explicitly
+    .replace(/[. ]+$/, "");
+  if (RESERVED_FILE_NAMES.test(cleaned)) return `_${cleaned}`;
   return cleaned || "layer";
 }

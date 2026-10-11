@@ -79,3 +79,9 @@ export const DEFAULT_SHAPE_STYLE: ShapeStyle = {
 };
 
 export const DEFAULT_SIDES = 6;
+
+/** Corner/point count of polygon & star tools, clamped into the 3–12 range. */
+export function clampSides(sides: number | undefined): number {
+  if (!Number.isFinite(sides)) return DEFAULT_SIDES;
+  return Math.min(SIDES_MAX, Math.max(SIDES_MIN, Math.round(sides as number)));
+}

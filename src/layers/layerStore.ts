@@ -6,8 +6,7 @@ import { isHexColor } from "../utils/color";
 import {
   DEFAULT_SHAPE_STYLE,
   DEFAULT_SIDES,
-  SIDES_MAX,
-  SIDES_MIN,
+  clampSides,
   type EditorTool,
   type ShapeStyle,
 } from "../shapes/shapeTypes";
@@ -15,6 +14,12 @@ const HISTORY_LIMIT = 100;
 
 function snap(s: EditorState): ProjectSnapshot {
   return { canvas: s.canvas, layers: s.layers, selectedIds: s.selectedIds };
+}
+
+/** One undo entry: the document snapshot plus the historyVersion it had. */
+interface HistoryEntry {
+  snapshot: ProjectSnapshot;
+  version: number;
 }
 
 function sameSnapshot(a: ProjectSnapshot, b: ProjectSnapshot): boolean {
@@ -32,10 +37,25 @@ function sameSnapshot(a: ProjectSnapshot, b: ProjectSnapshot): boolean {
 // undo step. Source data (bitmaps) is never part of history.
 // ---------------------------------------------------------------------------
 const history = {
-  past: [] as ProjectSnapshot[],
-  future: [] as ProjectSnapshot[],
-  pending: null as ProjectSnapshot | null,
+  past: [] as HistoryEntry[],
+  future: [] as HistoryEntry[],
+  pending: null as HistoryEntry | null,
 };
+
+/**
+ * Monotonic version source. Undo/redo rewind historyVersion to the restored
+ * entry's version (so returning to the saved state clears the dirty flag),
+ * but new edits always take a fresh number — a version is never reused for
+ * different content.
+ */
+let versionCounter = 0;
+
+/** A document replacement (open project / new canvas) starts a clean history. */
+function resetHistory(): void {
+  history.past = [];
+  history.future = [];
+  history.pending = null;
+}
 
 interface EditorState extends ProjectSnapshot {
   // view state (not undoable, not part of history)
@@ -82,7 +102,6 @@ interface EditorState extends ProjectSnapshot {
   // history control
   beginTransaction: () => void;
   commitTransaction: () => void;
-  cancelTransaction: () => void;
   undo: () => void;
   redo: () => void;
 
@@ -107,15 +126,12 @@ interface EditorState extends ProjectSnapshot {
   setLayerDimension: (id: string, axis: "width" | "height", value: number, natural: { width: number; height: number }) => void;
   setLayersOpacity: (ids: string[], opacity: number, commit?: boolean) => void;
   reorder: (fromIndex: number, toIndex: number) => void;
-  moveLayerToTop: (id: string) => void;
-  moveLayerToBottom: (id: string) => void;
   nudgeSelected: (dx: number, dy: number) => void;
 }
 
 function pushHistory(state: EditorState): Partial<EditorState> {
-  const s = snap(state);
   if (history.past.length >= HISTORY_LIMIT) history.past.shift();
-  history.past.push(s);
+  history.past.push({ snapshot: snap(state), version: state.historyVersion });
   history.future = [];
   return { canUndo: true, canRedo: false };
 }
@@ -149,11 +165,6 @@ function safeStrokeWidth(value: number): number {
   return Math.min(200, Math.max(0, Math.round(value * 100) / 100));
 }
 
-function safeSides(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_SIDES;
-  return Math.min(SIDES_MAX, Math.max(SIDES_MIN, Math.round(value)));
-}
-
 export const useEditorStore = create<EditorState>((set, get) => {
   /** Apply committed (undoable) mutation. */
   const commitSet = (fn: (s: EditorState) => Partial<EditorState>) => {
@@ -161,7 +172,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const patch = fn(s);
       const next = { ...s, ...patch };
       if (sameSnapshot(snap(s), snap(next)) && s.documentEpoch === next.documentEpoch) return s;
-      return { ...pushHistory(s), ...patch, historyVersion: s.historyVersion + 1 };
+      versionCounter += 1;
+      return { ...pushHistory(s), ...patch, historyVersion: versionCounter };
     });
   };
   /** Apply transient mutation (no history entry). */
@@ -219,7 +231,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         return same ? s : { shapeStyle: next };
       }),
     setShapeSides: (sides) => {
-      const next = safeSides(sides);
+      const next = clampSides(sides);
       set((s) => (s.shapeSides === next ? s : { shapeSides: next }));
     },
     setNotice: (msg) => set({ notice: msg }),
@@ -229,8 +241,20 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set({ savedVersion: version });
     },
     loadProject: ({ canvas, layers, name }) => {
-      commitSet((s) => ({ canvas, layers, selectedIds: [], documentEpoch: s.documentEpoch + 1 }));
-      set({ projectName: name, savedVersion: get().historyVersion, activeTool: "select" });
+      // Replacing the document invalidates the old history: an undo step must
+      // never resurrect content from another project under the new name.
+      resetHistory();
+      set((s) => ({
+        canvas,
+        layers,
+        selectedIds: [],
+        documentEpoch: s.documentEpoch + 1,
+        projectName: name,
+        savedVersion: s.historyVersion,
+        activeTool: "select",
+        canUndo: false,
+        canRedo: false,
+      }));
     },
 
     setSelection: (ids_) => set({ selectedIds: ids_ }),
@@ -246,43 +270,59 @@ export const useEditorStore = create<EditorState>((set, get) => {
     clearSelection: () => set({ selectedIds: [] }),
 
     beginTransaction: () => {
-      history.pending = snap(get());
+      history.pending = { snapshot: snap(get()), version: get().historyVersion };
     },
     commitTransaction: () => {
       const pending = history.pending;
       history.pending = null;
       if (!pending) return;
       const current = snap(get());
-      if (sameSnapshot(pending, current)) return; // gesture produced no change
+      if (sameSnapshot(pending.snapshot, current)) return; // gesture produced no change
       if (history.past.length >= HISTORY_LIMIT) history.past.shift();
       history.past.push(pending);
       history.future = [];
-      set({ canUndo: true, canRedo: false, historyVersion: get().historyVersion + 1 });
-    },
-    cancelTransaction: () => {
-      history.pending = null;
+      versionCounter += 1;
+      set({ canUndo: true, canRedo: false, historyVersion: versionCounter });
     },
     undo: () => {
-      const prev = history.past.pop();
-      if (!prev) return;
-      history.future.push(snap(get()));
-      set(restore(prev));
-      set((s) => ({ historyVersion: s.historyVersion + 1 }));
+      // An undo during an open gesture drops that gesture's pending snapshot;
+      // letting it commit afterwards would push a stale pre-drag state and
+      // wipe the redo chain (B2).
+      history.pending = null;
+      const entry = history.past.pop();
+      if (!entry) return;
+      history.future.push({ snapshot: snap(get()), version: get().historyVersion });
+      // Restoring the entry's version makes "undo back to the saved state"
+      // clear the dirty marker (savedVersion compares equal again).
+      set({ ...restore(entry.snapshot), historyVersion: entry.version });
     },
     redo: () => {
-      const next = history.future.pop();
-      if (!next) return;
-      history.past.push(snap(get()));
-      set(restore(next));
-      set((s) => ({ historyVersion: s.historyVersion + 1 }));
+      history.pending = null;
+      const entry = history.future.pop();
+      if (!entry) return;
+      history.past.push({ snapshot: snap(get()), version: get().historyVersion });
+      set({ ...restore(entry.snapshot), historyVersion: entry.version });
     },
 
     setCanvasSize: (width, height) =>
       commitSet((s) => ({ canvas: { ...s.canvas, width, height } })),
     setCanvasBackground: (background) =>
       commitSet((s) => ({ canvas: { ...s.canvas, background } })),
-    newCanvas: (canvas) =>
-      commitSet((s) => ({ canvas, layers: [], selectedIds: [], documentEpoch: s.documentEpoch + 1 })),
+    newCanvas: (canvas) => {
+      // Same document-boundary rule as loadProject: the replaced content is
+      // not reachable through undo, so the history must not keep it.
+      resetHistory();
+      versionCounter += 1;
+      set((s) => ({
+        canvas,
+        layers: [],
+        selectedIds: [],
+        documentEpoch: s.documentEpoch + 1,
+        historyVersion: versionCounter,
+        canUndo: false,
+        canRedo: false,
+      }));
+    },
     // note: newCanvas keeps the active tool — a fresh canvas is exactly when
     // drawing is most likely to be the next action.
 
@@ -317,19 +357,26 @@ export const useEditorStore = create<EditorState>((set, get) => {
     deleteSelected: () =>
       commitSet((s) => {
         const ids_ = ids(s.layers, s.selectedIds);
-        if (ids_.length === 0) return {};
+        // Locked layers are never modified by bulk actions (same rule as
+        // transforms/opacity/reorder): only unlocked selected layers go.
+        if (!s.layers.some((l) => ids_.includes(l.id) && !l.locked)) return {};
         return {
-          layers: s.layers.filter((l) => !ids_.includes(l.id)),
-          selectedIds: [],
+          layers: s.layers.filter((l) => !(ids_.includes(l.id) && !l.locked)),
+          selectedIds: s.layers
+            .filter((l) => ids_.includes(l.id) && l.locked)
+            .map((l) => l.id),
         };
       }),
     duplicateSelected: () =>
       commitSet((s) => {
         const ids_ = ids(s.layers, s.selectedIds);
-        if (ids_.length === 0) return {};
+        const names = new Set(s.layers.map((l) => l.name));
+        // The shared name set accumulates every copy's name, so duplicating
+        // "A" and "A copy" together yields "A copy 2" and "A copy 3".
         const copies = s.layers
-          .filter((l) => ids_.includes(l.id))
-          .map((l) => duplicateLayer(l, s.layers));
+          .filter((l) => ids_.includes(l.id) && !l.locked)
+          .map((l) => duplicateLayer(l, names));
+        if (copies.length === 0) return {};
         return {
           layers: [...s.layers, ...copies],
           selectedIds: copies.map((l) => l.id),
@@ -367,12 +414,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
           const secondary = axis === "width" ? "scaleY" : "scaleX";
           const nextScale = value / natural[axis];
           const ratio = current[primary] === 0 ? 1 : nextScale / current[primary];
+          const next = {
+            ...current,
+            [primary]: nextScale,
+            ...(layer.aspectLocked ? { [secondary]: current[secondary] * ratio } : {}),
+          };
+          // Keep the top-left corner anchored, matching Transformer handle
+          // drags — scaling around the center alone makes both edges drift.
+          const dw = natural.width * (next.scaleX - current.scaleX);
+          const dh = natural.height * (next.scaleY - current.scaleY);
+          const th = (current.rotation * Math.PI) / 180;
+          const cos = Math.cos(th);
+          const sin = Math.sin(th);
           return {
             ...layer,
             transform: {
-              ...current,
-              [primary]: nextScale,
-              ...(layer.aspectLocked ? { [secondary]: current[secondary] * ratio } : {}),
+              ...next,
+              x: current.x + (dw / 2) * cos - (dh / 2) * sin,
+              y: current.y + (dw / 2) * sin + (dh / 2) * cos,
             },
           };
         }),
@@ -386,27 +445,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
     reorder: (fromIndex, toIndex) =>
       commitSet((s) => {
+        // Out-of-range indices are clamped instead of splicing `undefined`
+        // into the stack (a stale display index from a concurrent change).
+        const n = s.layers.length;
+        if (n === 0) return {};
+        const from = Math.min(n - 1, Math.max(0, Math.round(fromIndex)));
+        const to = Math.min(n - 1, Math.max(0, Math.round(toIndex)));
+        if (from === to) return {};
         const next = [...s.layers];
-        const [moved] = next.splice(fromIndex, 1);
-        next.splice(toIndex, 0, moved);
-        return { layers: next };
-      }),
-    moveLayerToTop: (id) =>
-      commitSet((s) => {
-        const idx = s.layers.findIndex((l) => l.id === id);
-        if (idx < 0) return {};
-        const next = [...s.layers];
-        const [moved] = next.splice(idx, 1);
-        next.push(moved);
-        return { layers: next };
-      }),
-    moveLayerToBottom: (id) =>
-      commitSet((s) => {
-        const idx = s.layers.findIndex((l) => l.id === id);
-        if (idx < 0) return {};
-        const next = [...s.layers];
-        const [moved] = next.splice(idx, 1);
-        next.unshift(moved);
+        const [moved] = next.splice(from, 1);
+        if (!moved) return {};
+        next.splice(to, 0, moved);
         return { layers: next };
       }),
     nudgeSelected: (dx, dy) =>
